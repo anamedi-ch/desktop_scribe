@@ -8,7 +8,7 @@ use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Listener, Manager};
+use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl};
 use vibe_core::get_vibe_temp_folder;
 
 #[cfg(target_os = "macos")]
@@ -22,6 +22,67 @@ static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 static IS_TOGGLING: AtomicBool = AtomicBool::new(false);
 static LAST_DEVICES: Mutex<Option<Vec<AudioDevice>>> = Mutex::new(None);
 static LAST_STORE_IN_DOCUMENTS: Mutex<Option<bool>> = Mutex::new(None);
+
+fn show_recording_overlay(app_handle: &AppHandle) -> Result<()> {
+    let overlay_window_id = "recording_overlay";
+
+    // Check if window already exists
+    if let Some(window) = app_handle.get_webview_window(overlay_window_id) {
+        // Show window (Tauri's always_on_top and focused(false) should handle most cases)
+        window.show().map_err(|e| eyre!("Failed to show overlay window: {:?}", e))?;
+        // Enable click-through for existing window
+        window.set_ignore_cursor_events(true).map_err(|e| eyre!("Failed to set ignore cursor events: {:?}", e))?;
+        return Ok(());
+    }
+
+    // Create new overlay window
+    // Note: Transparency is handled via CSS in the HTML file
+    // Create as hidden first so we can configure it before showing
+    let window = tauri::WebviewWindowBuilder::new(
+        app_handle,
+        overlay_window_id,
+        WebviewUrl::App("recording-overlay.html".into()),
+    )
+    .inner_size(100.0, 70.0)
+    .resizable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .visible(false)
+    .focused(false)
+    .build()
+    .map_err(|e| eyre!("Failed to create overlay window: {:?}", e))?;
+
+    // Enable click-through so the window doesn't block mouse events
+    window.set_ignore_cursor_events(true).map_err(|e| eyre!("Failed to set ignore cursor events: {:?}", e))?;
+
+    // Show window (Tauri's always_on_top and focused(false) should handle most cases)
+    window.show().map_err(|e| eyre!("Failed to show overlay window: {:?}", e))?;
+
+    // Position window in bottom-right corner of primary monitor
+    if let Ok(primary_monitor) = window.primary_monitor() {
+        if let Some(monitor) = primary_monitor {
+            let monitor_size = monitor.size().to_logical::<f64>(monitor.scale_factor());
+            let window_size = window.inner_size().map_err(|e| eyre!("Failed to get window size: {:?}", e))?;
+            let x = monitor_size.width - window_size.width as f64 - 20.0;
+            let y = monitor_size.height - window_size.height as f64 - 20.0;
+            window
+                .set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))
+                .ok();
+        }
+    }
+
+    Ok(())
+}
+
+fn hide_recording_overlay(app_handle: &AppHandle) -> Result<()> {
+    let overlay_window_id = "recording_overlay";
+
+    if let Some(window) = app_handle.get_webview_window(overlay_window_id) {
+        window.hide().map_err(|e| eyre!("Failed to hide overlay window: {:?}", e))?;
+    }
+
+    Ok(())
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -89,17 +150,28 @@ pub async fn start_record(app_handle: AppHandle, devices: Vec<AudioDevice>, stor
         tracing::warn!("start_record called but already recording, ignoring");
         return Ok(());
     }
-    
+
     // Store devices and preferences for global shortcut
     {
-        let mut last_devices = LAST_DEVICES.lock().map_err(|e| eyre!("Failed to lock LAST_DEVICES: {:?}", e))?;
+        let mut last_devices = LAST_DEVICES
+            .lock()
+            .map_err(|e| eyre!("Failed to lock LAST_DEVICES: {:?}", e))?;
         *last_devices = Some(devices.clone());
-        let mut last_store = LAST_STORE_IN_DOCUMENTS.lock().map_err(|e| eyre!("Failed to lock LAST_STORE_IN_DOCUMENTS: {:?}", e))?;
+        let mut last_store = LAST_STORE_IN_DOCUMENTS
+            .lock()
+            .map_err(|e| eyre!("Failed to lock LAST_STORE_IN_DOCUMENTS: {:?}", e))?;
         *last_store = Some(store_in_documents);
     }
-    
+
     // Notify frontend that recording has started
     app_handle.emit("record_started", ())?;
+    // Show recording overlay (configured to not steal focus)
+    show_recording_overlay(&app_handle)
+        .map_err(|e| {
+            tracing::warn!("Failed to show recording overlay: {:?}", e);
+            e
+        })
+        .ok();
     let host = cpal::default_host();
 
     let mut wav_paths: Vec<(PathBuf, u32)> = Vec::new();
@@ -198,6 +270,11 @@ pub async fn start_record(app_handle: AppHandle, devices: Vec<AudioDevice>, stor
     let app_handle_clone = app_handle.clone();
     app_handle.once("stop_record", move |_event| {
         IS_RECORDING.store(false, Ordering::SeqCst);
+        // Hide recording overlay
+        hide_recording_overlay(&app_handle_clone).map_err(|e| {
+            tracing::warn!("Failed to hide recording overlay: {:?}", e);
+            e
+        }).ok();
         for (i, stream_handle) in stream_handles.iter().enumerate() {
             let stream_handle = stream_handle.lock().map_err(|e| eyre!("{:?}", e)).log_error();
             if let Some(mut stream_handle) = stream_handle {
@@ -316,37 +393,51 @@ where
 /// Toggle recording: start if not recording, stop if recording
 pub async fn toggle_record_internal(app_handle: AppHandle) -> Result<()> {
     // Prevent concurrent toggle attempts
-    if IS_TOGGLING.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+    if IS_TOGGLING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
         tracing::warn!("Toggle already in progress, ignoring duplicate request");
         return Ok(());
     }
-    
+
     // Use SeqCst ordering for consistent state visibility
     let is_recording = IS_RECORDING.load(Ordering::SeqCst);
     tracing::info!("toggle_record_internal called. Current recording state: {}", is_recording);
-    
+
     let result = if is_recording {
         tracing::info!("Global shortcut: stopping recording");
         // Set state to false immediately to prevent race conditions
         IS_RECORDING.store(false, Ordering::SeqCst);
         // Notify frontend immediately that recording stopped
         app_handle.emit("record_stopped", ())?;
+        // Hide recording overlay
+        hide_recording_overlay(&app_handle)
+            .map_err(|e| {
+                tracing::warn!("Failed to hide recording overlay: {:?}", e);
+                e
+            })
+            .ok();
         // Then trigger the stop process
         app_handle.emit("stop_record", ())?;
         Ok(())
     } else {
         tracing::info!("Global shortcut: starting recording");
         // Don't set IS_RECORDING here - let start_record handle it to avoid race condition
-        
+
         let devices = {
-            let last_devices = LAST_DEVICES.lock().map_err(|e| eyre!("Failed to lock LAST_DEVICES: {:?}", e))?;
+            let last_devices = LAST_DEVICES
+                .lock()
+                .map_err(|e| eyre!("Failed to lock LAST_DEVICES: {:?}", e))?;
             last_devices.as_ref().cloned()
         };
         let store_in_documents = {
-            let last_store = LAST_STORE_IN_DOCUMENTS.lock().map_err(|e| eyre!("Failed to lock LAST_STORE_IN_DOCUMENTS: {:?}", e))?;
+            let last_store = LAST_STORE_IN_DOCUMENTS
+                .lock()
+                .map_err(|e| eyre!("Failed to lock LAST_STORE_IN_DOCUMENTS: {:?}", e))?;
             *last_store
         };
-        
+
         let result = if let Some(devices) = devices {
             if let Some(store_in_documents) = store_in_documents {
                 start_record(app_handle.clone(), devices, store_in_documents).await
@@ -378,7 +469,7 @@ pub async fn toggle_record_internal(app_handle: AppHandle) -> Result<()> {
             }
             start_record(app_handle.clone(), default_devices, false).await
         };
-        
+
         // If start_record failed, it will have already reset the state, but we should still emit the event
         if let Err(e) = &result {
             tracing::error!("Failed to start recording: {:?}", e);
@@ -388,10 +479,10 @@ pub async fn toggle_record_internal(app_handle: AppHandle) -> Result<()> {
                 app_handle.emit("record_stopped", ())?;
             }
         }
-        
+
         result
     };
-    
+
     // Release the toggle lock
     IS_TOGGLING.store(false, Ordering::SeqCst);
     result
@@ -401,4 +492,12 @@ pub async fn toggle_record_internal(app_handle: AppHandle) -> Result<()> {
 /// Toggle recording: start if not recording, stop if recording
 pub async fn toggle_record(app_handle: AppHandle) -> Result<()> {
     toggle_record_internal(app_handle).await
+}
+
+/// Command to set ignore cursor events for a window (click-through mode)
+/// This allows the overlay window to be transparent to mouse events
+#[tauri::command]
+pub fn set_ignore_cursor_events(window: tauri::Window, ignore: bool) -> Result<()> {
+    window.set_ignore_cursor_events(ignore).map_err(|e| eyre!("Failed to set ignore cursor events: {:?}", e))?;
+    Ok(())
 }

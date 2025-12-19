@@ -11,7 +11,6 @@ import { viewModel } from './viewModel'
 import AudioDeviceInput from '~/components/AudioDeviceInput'
 import { ReactComponent as FileIcon } from '~/icons/file.svg'
 import { ReactComponent as MicrphoneIcon } from '~/icons/microphone.svg'
-import { ReactComponent as LinkIcon } from '~/icons/link.svg'
 import { useEffect } from 'react'
 import { webviewWindow } from '@tauri-apps/api'
 import * as keepAwake from 'tauri-plugin-keepawake-api'
@@ -32,6 +31,12 @@ export default function Home() {
 	useEffect(() => {
 		showWindow()
 	}, [])
+	useEffect(() => {
+		if (!vm.preference.showFileUpload && vm.preference.homeTabIndex === 1) {
+			vm.preference.setHomeTabIndex(0)
+		}
+	}, [vm.preference.showFileUpload, vm.preference.homeTabIndex])
+
 	return (
 		<Layout>
 			<div role="tablist" className="tabs tabs-lifted flex m-auto mt-5">
@@ -41,15 +46,14 @@ export default function Home() {
 					className={cx('tab [--tab-border-color:gray]', vm.preference.homeTabIndex === 0 && 'tab-active')}>
 					<MicrphoneIcon className="w-[18px] h-[18px]" />
 				</a>
-				<a
-					role="tab"
-					onClick={() => vm.preference.setHomeTabIndex(1)}
-					className={cx('tab [--tab-border-color:gray]', vm.preference.homeTabIndex === 1 && 'tab-active')}>
-					<FileIcon className="w-[18px] h-[18px]" />
-				</a>
-				<a role="tab" onClick={vm.switchToLinkTab} className={cx('tab [--tab-border-color:gray]', vm.preference.homeTabIndex === 2 && 'tab-active')}>
-					<LinkIcon className="w-[18px] h-[18px]" />
-				</a>
+				{vm.preference.showFileUpload && (
+					<a
+						role="tab"
+						onClick={() => vm.preference.setHomeTabIndex(1)}
+						className={cx('tab [--tab-border-color:gray]', vm.preference.homeTabIndex === 1 && 'tab-active')}>
+						<FileIcon className="w-[18px] h-[18px]" />
+					</a>
+				)}
 			</div>
 
 			{/* Record */}
@@ -155,53 +159,6 @@ export default function Home() {
 						</div>
 					)}
 				</>
-			)}
-
-			{/* URL */}
-			{vm.preference.homeTabIndex === 2 && (
-				<div className="flex w-[300px] flex-col m-auto">
-					<div className="flex flex-col gap-0 mt-5">
-						<input
-							type="text"
-							className="input input-bordered"
-							value={vm.audioUrl}
-							onChange={(event) => vm.setAudioUrl(event.target.value)}
-							placeholder="https://www.youtube.com/watch?v=aj8-ABRl1Jo"
-							onKeyDown={(event) => (event.key === 'Enter' ? vm.downloadAudio() : null)}
-						/>
-
-						{vm.downloadingAudio ? (
-							<>
-								<div className="w-full flex flex-col items-center mt-5">
-									<div className="flex flex-row items-center text-center gap-3 bg-base-200 p-4 rounded-2xl">
-										<span className="loading loading-spinner text-primary"></span>
-										<p>{t('common.downloading', { progress: vm.ytdlpProgress })}</p>
-										<button onClick={() => vm.cancelYtDlpDownload()} className="btn btn-primary btn-ghost btn-sm text-red-500">
-											{t('common.cancel')}
-										</button>
-									</div>
-								</div>
-							</>
-						) : (
-							<>
-								<label className="label cursor-pointer mt-2 mb-5">
-									<span className="label-text">{t('common.save-record-in-documents-folder')}</span>
-									<input
-										type="checkbox"
-										className="toggle toggle-primary"
-										onChange={(e) => vm.preference.setStoreRecordInDocuments(e.target.checked)}
-										checked={vm.preference.storeRecordInDocuments}
-									/>
-								</label>
-
-								<button onMouseDown={vm.downloadAudio} className="btn btn-primary mt-0">
-									{t('common.download-file')}
-								</button>
-								<ModelOptions options={vm.preference.modelOptions} setOptions={vm.preference.setModelOptions} />
-							</>
-						)}
-					</div>
-				</div>
 			)}
 		</Layout>
 	)

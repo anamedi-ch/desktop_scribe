@@ -7,6 +7,7 @@ import * as webview from '@tauri-apps/api/webviewWindow'
 import * as dialog from '@tauri-apps/plugin-dialog'
 import * as fs from '@tauri-apps/plugin-fs'
 import { open } from '@tauri-apps/plugin-shell'
+import * as clipboard from '@tauri-apps/plugin-clipboard-manager'
 import { useContext, useEffect, useRef, useState } from 'react'
 import { toast as hotToast } from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
@@ -17,11 +18,11 @@ import { TextFormat } from '~/components/FormatSelect'
 import { AudioDevice } from '~/lib/audio'
 import * as config from '~/lib/config'
 import { Claude, Llm, Ollama } from '~/lib/llm'
+import { defaultSummarySchema, executeAnamediTranscription } from '~/lib/anamediApi'
 import * as transcript from '~/lib/transcript'
 import { useConfirmExit } from '~/lib/useConfirmExit'
 import { NamedPath, ls, openPath, pathToNamedPath, startKeepAwake, stopKeepAwake } from '~/lib/utils'
 import { getX86Features } from '~/lib/x86Features'
-import * as ytDlp from '~/lib/ytdlp'
 import { ErrorModalContext } from '~/providers/ErrorModal'
 import { useFilesContext } from '~/providers/FilesProvider'
 import { ModelOptions, usePreferenceProvider } from '~/providers/Preference'
@@ -58,10 +59,6 @@ export function viewModel() {
 	const [devices, setDevices] = useState<AudioDevice[]>([])
 	const [inputDevice, setInputDevice] = useState<AudioDevice | null>(null)
 	const [outputDevice, setOutputDevice] = useState<AudioDevice | null>(null)
-	const [audioUrl, setAudioUrl] = useState<string>('')
-	const [downloadingAudio, setDownloadingAudio] = useState(false)
-	const [ytdlpProgress, setYtDlpProgress] = useState<number | null>(null)
-	const cancelYtDlpRef = useRef<boolean>(false)
 
 	const { updateApp, availableUpdate } = useContext(UpdaterContext)
 	const { setState: setErrorModal } = useContext(ErrorModalContext)
@@ -106,65 +103,11 @@ export function viewModel() {
 		}
 	}, [preference.llmConfig])
 
-	useEffect(() => {
-		listen<number>('ytdlp-progress', ({ payload }) => {
-			const newProgress = Math.ceil(payload)
-			if (!ytdlpProgress || newProgress > ytdlpProgress) {
-				setYtDlpProgress(newProgress)
-			}
-		})
-	}, [])
 
 	useEffect(() => {
 		preferenceRef.current = preference
 	}, [preference])
 
-	async function cancelYtDlpDownload() {
-		cancelYtDlpRef.current = true
-		event.emit('ytdlp-cancel')
-	}
-
-	async function switchToLinkTab() {
-		const isUpToDate = config.ytDlpVersion === preference.ytDlpVersion
-		const exists = await ytDlp.exists()
-		if (!exists || (!isUpToDate && preference.shouldCheckYtDlpVersion)) {
-			let shouldInstallOrUpdate = false
-			if (!isUpToDate) {
-				shouldInstallOrUpdate = await dialog.ask(t('common.ask-for-update-ytdlp-message'), {
-					title: t('common.ask-for-update-ytdlp-title'),
-					kind: 'info',
-					cancelLabel: t('common.later'),
-					okLabel: t('common.update-now'),
-				})
-			} else {
-				shouldInstallOrUpdate = await dialog.ask(t('common.ask-for-install-ytdlp-message'), {
-					title: t('common.ask-for-install-ytdlp-title'),
-					kind: 'info',
-					cancelLabel: t('common.cancel'),
-					okLabel: t('common.install-now'),
-				})
-			}
-
-			if (shouldInstallOrUpdate) {
-				try {
-					toast.setMessage(t('common.downloading-ytdlp'))
-					toast.setProgress(0)
-					toast.setOpen(true)
-					await ytDlp.downloadYtDlp()
-					preference.setYtDlpVersion(config.ytDlpVersion)
-					toast.setOpen(false)
-					preference.setHomeTabIndex(2)
-				} catch (e) {
-					console.error(e)
-					setErrorModal?.({ log: String(e), open: true })
-				}
-			} else if (exists) {
-				preference.setHomeTabIndex(2)
-			}
-		} else {
-			preference.setHomeTabIndex(2)
-		}
-	}
 
 	async function handleNewSegment() {
 		await listen('transcribe_progress', (event) => {
@@ -352,6 +295,16 @@ export function viewModel() {
 		emit('stop_record')
 	}
 
+	async function copyAndPasteSummary(summaryText: string): Promise<void> {
+		try {
+			await clipboard.writeText(summaryText)
+			await new Promise((resolve) => setTimeout(resolve, 50))
+			await invoke('simulate_paste')
+		} catch (error) {
+			console.error('Failed to copy and paste summary:', error)
+		}
+	}
+
 	async function transcribe(path: string) {
 		startKeepAwake()
 
@@ -362,30 +315,136 @@ export function viewModel() {
 		setLoading(true)
 		abortRef.current = false
 
-		var newSegments: transcript.Segment[] = []
+		let newSegments: transcript.Segment[] = []
+		let usedAnamediApi = false
+		let hasSummary = false
+
 		try {
-			const modelPath = preferenceRef.current.modelPath
-			await invoke('load_model', { modelPath, gpuDevice: preferenceRef.current.gpuDevice, useGpu: preferenceRef.current.useGpu })
-			const options = {
-				path,
-				...preferenceRef.current.modelOptions,
-			}
 			const startTime = performance.now()
-			const diarizeOptions = { threshold: preferenceRef.current.diarizeThreshold, max_speakers: preferenceRef.current.maxSpeakers, enabled: preferenceRef.current.recognizeSpeakers }
-			const res: transcript.Transcript = await invoke('transcribe', {
-				options,
-				modelPath,
-				diarizeOptions,
-				ffmpegOptions: preferenceRef.current.ffmpegOptions,
+
+			// For now use Anamedi cloud API by default instead of local model.
+			const anamediResponse = await executeAnamediTranscription({
+				audioPath: path,
+				schema: defaultSummarySchema,
+			})
+			usedAnamediApi = true
+
+			const diarizedSegments: transcript.Segment[] = (anamediResponse.diarized ?? []).map((segment) => {
+				const [start, stop] = segment.timestamp
+				return {
+					start,
+					stop,
+					text: segment.text,
+					speaker: segment.speaker,
+				}
 			})
 
-			// Calcualte time
-			const total = Math.round((performance.now() - startTime) / 1000)
-			console.info(`Transcribe took ${total} seconds.`)
+			newSegments = diarizedSegments.length ? diarizedSegments : [{ start: 0, stop: 0, text: anamediResponse.transcript }]
+			setSegments(newSegments)
 
-			newSegments = res.segments
-			setSegments(res.segments)
+			const total = Math.round((performance.now() - startTime) / 1000)
+			console.info(`Anamedi transcribe took ${total} seconds.`)
 			hotToast.success(t('common.transcribe-took', { total: String(total) }), { position: 'bottom-center' })
+
+			// Try to extract a summary from structuredData if present
+			const structured = anamediResponse.structuredData as unknown
+			if (structured && typeof structured === 'object' && !Array.isArray(structured)) {
+				console.info('[Anamedi] structuredData', structured)
+
+				let summaryText: string | null = null
+
+				// Helper function to format JSON nicely
+				function formatStructuredData(obj: unknown): string {
+					if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
+						return String(obj)
+					}
+
+					const entries = Object.entries(obj)
+					if (entries.length === 0) {
+						return ''
+					}
+
+					const parts: string[] = []
+					for (const [key, value] of entries) {
+						const formattedKey = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')
+						if (value === null || value === undefined) {
+							continue
+						}
+						if (typeof value === 'string' && value.trim().length > 0) {
+							parts.push(`${formattedKey}:\n${value.trim()}`)
+						} else if (Array.isArray(value) && value.length > 0) {
+							const arrayItems = value
+								.filter((item) => item !== null && item !== undefined)
+								.map((item) => (typeof item === 'string' ? item.trim() : String(item)))
+								.filter((item) => item.length > 0)
+							if (arrayItems.length > 0) {
+								parts.push(`${formattedKey}:\n${arrayItems.map((item) => `• ${item}`).join('\n')}`)
+							}
+						} else if (typeof value === 'object' && value !== null) {
+							const nested = formatStructuredData(value)
+							if (nested.trim().length > 0) {
+								parts.push(`${formattedKey}:\n${nested.split('\n').map((line) => `  ${line}`).join('\n')}`)
+							}
+						} else if (typeof value === 'number' || typeof value === 'boolean') {
+							parts.push(`${formattedKey}: ${String(value)}`)
+						}
+					}
+					return parts.join('\n\n')
+				}
+
+				// 1) If the endpoint returned a direct `summary` field, use it.
+				const directSummary = (structured as { summary?: unknown }).summary
+				if (typeof directSummary === 'string' && directSummary.trim().length > 0) {
+					summaryText = directSummary
+				} else {
+					// 2) Try to detect a SOAP-style structure and format it nicely.
+					const maybeSoap = structured as {
+						subjective?: unknown
+						objective?: unknown
+						assessment?: unknown
+						plan?: unknown
+					}
+
+					const subjective = typeof maybeSoap.subjective === 'string' ? maybeSoap.subjective.trim() : ''
+					const objective = typeof maybeSoap.objective === 'string' ? maybeSoap.objective.trim() : ''
+					const assessment = typeof maybeSoap.assessment === 'string' ? maybeSoap.assessment.trim() : ''
+					const plan = typeof maybeSoap.plan === 'string' ? maybeSoap.plan.trim() : ''
+
+					const hasSoapContent = subjective || objective || assessment || plan
+					if (hasSoapContent) {
+						const parts: string[] = []
+						if (subjective) {
+							parts.push(`Subjective:\n${subjective}`)
+						}
+						if (objective) {
+							parts.push(`Objective:\n${objective}`)
+						}
+						if (assessment) {
+							parts.push(`Assessment:\n${assessment}`)
+						}
+						if (plan) {
+							parts.push(`Plan:\n${plan}`)
+						}
+						summaryText = parts.join('\n\n')
+					} else {
+						// 3) Fallback: format the entire structured data nicely.
+						summaryText = formatStructuredData(structured)
+					}
+				}
+
+				if (summaryText && summaryText.trim().length > 0) {
+					const lastStop = newSegments.length ? newSegments[newSegments.length - 1].stop : 0
+					setSummarizeSegments([
+						{
+							start: 0,
+							stop: lastStop,
+							text: summaryText,
+						},
+					])
+					await copyAndPasteSummary(summaryText)
+					hasSummary = true
+				}
+			}
 		} catch (error) {
 			if (!abortRef.current) {
 				stopKeepAwake()
@@ -399,18 +458,20 @@ export function viewModel() {
 			setIsAborting(false)
 			setProgress(null)
 			if (!abortRef.current) {
-				// Focus back the window and play sound
+				// Play sound
 				if (preferenceRef.current.soundOnFinish) {
 					new Audio(successSound).play()
 				}
-				if (preferenceRef.current.focusOnFinish) {
+				// Only focus the window if we didn't paste a summary (to avoid stealing focus)
+				if (preferenceRef.current.focusOnFinish && !hasSummary) {
 					webview.getCurrentWebviewWindow().unminimize()
 					webview.getCurrentWebviewWindow().setFocus()
 				}
 			}
 		}
 
-		if (newSegments && llm && preferenceRef.current.llmConfig?.enabled) {
+		// Only run local LLM summarization when using the local pipeline.
+		if (!usedAnamediApi && newSegments && llm && preferenceRef.current.llmConfig?.enabled) {
 			try {
 				const question = `${preferenceRef.current.llmConfig.prompt.replace('%s', transcript.asText(newSegments))}`
 				const answerPromise = llm.ask(question)
@@ -428,6 +489,8 @@ export function viewModel() {
 				const answer = await answerPromise
 				if (answer) {
 					setSummarizeSegments([{ start: 0, stop: newSegments?.[newSegments?.length - 1].stop ?? 0, text: answer }])
+					await copyAndPasteSummary(answer)
+					hasSummary = true
 				}
 			} catch (e) {
 				console.error(e)
@@ -435,34 +498,8 @@ export function viewModel() {
 		}
 	}
 
-	async function downloadAudio() {
-		if (audioUrl) {
-			setYtDlpProgress(0)
-			setDownloadingAudio(true)
-			try {
-				const outPath = await ytDlp.downloadAudio(audioUrl, preference.storeRecordInDocuments)
-				if (cancelYtDlpRef.current) {
-					cancelYtDlpRef.current = false
-					return
-				}
-				preference.setHomeTabIndex(1)
-				setFiles([{ name: 'audio.m4a', path: outPath }])
-				transcribe(outPath)
-			} catch (e) {
-				console.error(e)
-				setErrorModal?.({ log: String(e), open: true })
-			} finally {
-				setDownloadingAudio(false)
-			}
-			setYtDlpProgress(null)
-		}
-	}
 
 	return {
-		cancelYtDlpRef,
-		cancelYtDlpDownload,
-		ytdlpProgress,
-		setYtDlpProgress,
 		transcriptTab,
 		setTranscriptTab,
 		summarizeSegments,
@@ -495,11 +532,5 @@ export function viewModel() {
 		setSegments,
 		transcribe,
 		onAbort,
-		switchToLinkTab,
-		audioUrl,
-		setAudioUrl,
-		downloadAudio,
-		downloadingAudio,
-		setDownloadingAudio,
 	}
 }

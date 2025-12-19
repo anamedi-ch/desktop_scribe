@@ -4,7 +4,8 @@
   "description": "default permissions",
   "local": true,
   "windows": [
-    "main"
+    "main",
+    "recording_overlay"
   ],
   "permissions": [
     "keepawake:allow-start",
@@ -97,25 +98,13 @@
       ]
     },
     {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "yt-dlp_macos",
-          "cmd": "$APPLOCALDATA/yt-dlp_macos",
-          "args": [
-            {
-              "validator": "\\S+"
-            }
-          ],
-          "sidecar": false
-        }
-      ]
-    },
-    {
       "identifier": "http:default",
       "allow": [
         {
           "url": "https://*.anthropic.*"
+        },
+        {
+          "url": "https://app.anamedi.com/*"
         },
         {
           "url": "http{s}?://localhost:*/*"

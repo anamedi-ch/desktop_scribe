@@ -21,7 +21,6 @@ use vibe_core::get_vibe_temp_folder;
 use vibe_core::transcript::Segment;
 use vibe_core::transcript::Transcript;
 pub mod audio;
-pub mod ytdlp;
 
 /// Return true if there's internet connection
 /// timeout in ms
@@ -603,7 +602,7 @@ pub fn simulate_paste() -> Result<()> {
     use enigo::*;
     let settings = Settings::default();
     let mut enigo = Enigo::new(&settings)?;
-    
+
     #[cfg(target_os = "macos")]
     {
         enigo.key(Key::Meta, Direction::Press)?;
@@ -612,7 +611,7 @@ pub fn simulate_paste() -> Result<()> {
         std::thread::sleep(std::time::Duration::from_millis(10));
         enigo.key(Key::Meta, Direction::Release)?;
     }
-    
+
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
         enigo.key(Key::Control, Direction::Press)?;
@@ -621,6 +620,6 @@ pub fn simulate_paste() -> Result<()> {
         std::thread::sleep(std::time::Duration::from_millis(10));
         enigo.key(Key::Control, Direction::Release)?;
     }
-    
+
     Ok(())
 }
