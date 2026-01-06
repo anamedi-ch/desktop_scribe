@@ -26,7 +26,6 @@ import { getX86Features } from '~/lib/x86Features'
 import { ErrorModalContext } from '~/providers/ErrorModal'
 import { useFilesContext } from '~/providers/FilesProvider'
 import { ModelOptions, usePreferenceProvider } from '~/providers/Preference'
-import { useToastProvider } from '~/providers/Toast'
 import { UpdaterContext } from '~/providers/Updater'
 
 export interface BatchOptions {
