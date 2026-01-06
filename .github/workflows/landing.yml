@@ -26,26 +26,20 @@ jobs:
         runs-on: macos-latest
         steps:
             - name: Checkout
-              uses: actions/checkout@v3
+              uses: actions/checkout@v4
 
             - name: setup Bun
               uses: oven-sh/setup-bun@v1
 
             - name: Build
+              working-directory: landing
+              env:
+                GH_TOKEN: ${{ secrets.GH_TOKEN }}
               run: |
                 bun install
                 bun run ../scripts/landing_links.js
                 cp -rf ../docs static/
                 bun run build
-              working-directory: landing
-              env:
-                GH_TOKEN: ${{ secrets.GH_TOKEN }}
-
-            - name: Setup Pages
-              uses: actions/configure-pages@v5
-              with:
-                  static_site_generator: sveltekit
-                  working-directory: landing
 
             - name: Upload Artifacts
               uses: actions/upload-pages-artifact@v3

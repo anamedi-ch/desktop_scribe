@@ -10,12 +10,6 @@
 		"imageURL": "/feature-formats.png"
 	},
 	{
-		"title": "Transcribe from popular websites",
-		"description": "Easily transcribe videos from popular websites like YouTube, Facebook, LinkedIn, and more by simply pasting the URL.",
-		"imageURL": "/feature-url-transcribe.png",
-		"align": "center"
-	},
-	{
 		"title": "Real-time Transcription Preview",
 		"description": "Watch your transcription happen in real-time, with the option to cancel at any moment.",
 		"imageURL": "/feature-realtime-preview.png",

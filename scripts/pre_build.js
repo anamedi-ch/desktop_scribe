@@ -19,7 +19,15 @@ function hasFeature(name) {
 
 async function wget(url, path) {
 	if (platform === 'windows') {
-		await $`wget.exe --show-progress --progress=bar:force:noscroll --tries=10 -nc ${url} -O ${path}`
+		// Use PowerShell's Invoke-WebRequest directly for Windows (more reliable than wget)
+		try {
+			await $`powershell -Command "Invoke-WebRequest -Uri '${url}' -OutFile '${path}'"`
+		} catch (error) {
+			// Fallback: try wget.exe if PowerShell fails
+			const wgetPath = process.env.WGET_PATH || 'C:\\msys64\\usr\\bin\\wget.exe'
+			console.log('PowerShell failed, trying wget.exe...')
+			await $`"${wgetPath}" --show-progress --progress=bar:force:noscroll --tries=10 -nc ${url} -O ${path}`
+		}
 	} else {
 		await $`wget --show-progress --progress=bar:force:noscroll --tries=10 -nc ${url} -O ${path}`
 	}
@@ -58,9 +66,10 @@ const config = {
 			'libavformat-dev',
 			'libavfilter-dev',
 			'libavdevice-dev', // FFMPEG
-			'libasound2-dev', // cpal
-			'libomp-dev', // OpenMP in ggml.ai
-			'libstdc++-12-dev', //ROCm
+		'libasound2-dev', // cpal
+		'libomp-dev', // OpenMP in ggml.ai
+		'libstdc++-12-dev', //ROCm
+		'libxdo-dev', // enigo (Linux automation)
 		],
 	},
 	macos: {
