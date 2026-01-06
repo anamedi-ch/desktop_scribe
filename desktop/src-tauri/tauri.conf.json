@@ -49,7 +49,7 @@
 	},
 	"plugins": {
 		"updater": {
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZWNyZXQga2V5ClJXUlRZMEl5OUttMldudytCRXFTTlFXRkZOb3lIdHFGK3JFN1pjOTczSVVhOVVCSkJJTUFBQkFBQUFBQUFBQUFBQUlBQUFBQSszMkJNek52alBWTXNsWEQxZExERytWc3hWMDk1cFlSWldHaTArcGZtTXlVUkNhOHdyQ2pRdWtsSGFLOVZLRFA3RTQ3YnBXMWhSTFdmOVNOYk1NMGkyZisrcm8yMVZBYXFlWG1ZdXd4MnFSbk5oY1JzSTk1ZzVSa0dCVkR4V0dSUS9OUTFlRnZndU09Cg==",
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNDNjBEOENDMkU5QjExQkMKUldTOEVac3V6TmhnUEFtVThpY1pKNFk0RzBody82N0s2SDJvbkI5bnZoU2NjNHJwLzRINjV4OW4K",
 			"endpoints": [
 				"https://github.com/anamedi-ch/desktop_scribe/releases/latest/download/latest.json"
 			]
