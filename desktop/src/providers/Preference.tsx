@@ -69,6 +69,10 @@ export interface Preference {
 	setAdvancedTranscribeOptions: ModifyState<AdvancedTranscribeOptions>
 	showFileUpload: boolean
 	setShowFileUpload: ModifyState<boolean>
+	anamediApiKey: string | null
+	setAnamediApiKey: ModifyState<string | null>
+	useLocalProcessing: boolean
+	setUseLocalProcessing: ModifyState<boolean>
 }
 
 // Create the context
@@ -163,6 +167,8 @@ export function PreferenceProvider({ children }: { children: ReactNode }) {
 		saveNextToAudioFile: true,
 		skipIfExists: true,
 	})
+	const [anamediApiKey, setAnamediApiKey] = useLocalStorage<string | null>('prefs_anamedi_api_key', null)
+	const [useLocalProcessing, setUseLocalProcessing] = useLocalStorage<boolean>('prefs_use_local_processing', false)
 
 	useEffect(() => {
 		setIsFirstRun(false)
@@ -267,6 +273,10 @@ export function PreferenceProvider({ children }: { children: ReactNode }) {
 		setAdvancedTranscribeOptions,
 		showFileUpload,
 		setShowFileUpload,
+		anamediApiKey,
+		setAnamediApiKey,
+		useLocalProcessing,
+		setUseLocalProcessing,
 	}
 
 	return <PreferenceContext.Provider value={preference}>{children}</PreferenceContext.Provider>

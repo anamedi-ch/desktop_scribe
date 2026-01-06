@@ -18,7 +18,7 @@ import { TextFormat } from '~/components/FormatSelect'
 import { AudioDevice } from '~/lib/audio'
 import * as config from '~/lib/config'
 import { Claude, Llm, Ollama } from '~/lib/llm'
-import { defaultSummarySchema, executeAnamediTranscription } from '~/lib/anamediApi'
+import { defaultSummarySchema, defaultSoapInstructions, executeAnamediTranscription } from '~/lib/anamediApi'
 import * as transcript from '~/lib/transcript'
 import { useConfirmExit } from '~/lib/useConfirmExit'
 import { NamedPath, ls, openPath, pathToNamedPath, startKeepAwake, stopKeepAwake } from '~/lib/utils'
@@ -230,7 +230,7 @@ export function viewModel() {
 		} catch (error) {
 			console.error(error)
 			await dialog.message(
-				`Your GPU is unsupported in this version of Anamedi. Please download vibe_2.4.0_x64-setup.exe. Click OK to open the download page.`,
+				`Your GPU is unsupported in this version of Anamedi. Please download anamedi_2.4.0_x64-setup.exe. Click OK to open the download page.`,
 				{
 					kind: 'error',
 				}
@@ -322,128 +322,85 @@ export function viewModel() {
 		try {
 			const startTime = performance.now()
 
-			// For now use Anamedi cloud API by default instead of local model.
-			const anamediResponse = await executeAnamediTranscription({
-				audioPath: path,
-				schema: defaultSummarySchema,
-			})
-			usedAnamediApi = true
+			if (!preference.useLocalProcessing) {
+				const anamediResponse = await executeAnamediTranscription({
+					audioPath: path,
+					schema: defaultSummarySchema,
+					instructions: defaultSoapInstructions,
+					apiKey: preference.anamediApiKey ?? undefined,
+				})
+				usedAnamediApi = true
 
-			const diarizedSegments: transcript.Segment[] = (anamediResponse.diarized ?? []).map((segment) => {
-				const [start, stop] = segment.timestamp
-				return {
-					start,
-					stop,
-					text: segment.text,
-					speaker: segment.speaker,
-				}
-			})
+				const diarizedSegments: transcript.Segment[] = (anamediResponse.diarized ?? []).map((segment) => {
+					const [start, stop] = segment.timestamp
+					return {
+						start,
+						stop,
+						text: segment.text,
+						speaker: segment.speaker,
+					}
+				})
 
-			newSegments = diarizedSegments.length ? diarizedSegments : [{ start: 0, stop: 0, text: anamediResponse.transcript }]
-			setSegments(newSegments)
+				newSegments = diarizedSegments.length ? diarizedSegments : [{ start: 0, stop: 0, text: anamediResponse.transcript }]
+				setSegments(newSegments)
 
-			const total = Math.round((performance.now() - startTime) / 1000)
-			console.info(`Anamedi transcribe took ${total} seconds.`)
-			hotToast.success(t('common.transcribe-took', { total: String(total) }), { position: 'bottom-center' })
+				const total = Math.round((performance.now() - startTime) / 1000)
+				console.info(`Anamedi transcribe took ${total} seconds.`)
+				hotToast.success(t('common.transcribe-took', { total: String(total) }), { position: 'bottom-center' })
 
-			// Try to extract a summary from structuredData if present
-			const structured = anamediResponse.structuredData as unknown
-			if (structured && typeof structured === 'object' && !Array.isArray(structured)) {
-				console.info('[Anamedi] structuredData', structured)
+				const structured = anamediResponse.structuredData as unknown
+				if (structured && typeof structured === 'object' && !Array.isArray(structured)) {
+					console.info('[Anamedi] structuredData', structured)
 
-				let summaryText: string | null = null
-
-				// Helper function to format JSON nicely
-				function formatStructuredData(obj: unknown): string {
-					if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
-						return String(obj)
+					const soapData = structured as {
+						title?: unknown
+						summary?: unknown
 					}
 
-					const entries = Object.entries(obj)
-					if (entries.length === 0) {
-						return ''
-					}
+					// Extract summary field (contains the formatted German SOAP note)
+					const summaryText =
+						typeof soapData.summary === 'string' && soapData.summary.trim().length > 0
+							? soapData.summary.trim()
+							: null
 
-					const parts: string[] = []
-					for (const [key, value] of entries) {
-						const formattedKey = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')
-						if (value === null || value === undefined) {
-							continue
+					if (summaryText) {
+						// Optionally prepend title if available
+						let finalText = summaryText
+						if (typeof soapData.title === 'string' && soapData.title.trim().length > 0) {
+							finalText = `${soapData.title.trim()}\n\n${summaryText}`
 						}
-						if (typeof value === 'string' && value.trim().length > 0) {
-							parts.push(`${formattedKey}:\n${value.trim()}`)
-						} else if (Array.isArray(value) && value.length > 0) {
-							const arrayItems = value
-								.filter((item) => item !== null && item !== undefined)
-								.map((item) => (typeof item === 'string' ? item.trim() : String(item)))
-								.filter((item) => item.length > 0)
-							if (arrayItems.length > 0) {
-								parts.push(`${formattedKey}:\n${arrayItems.map((item) => `• ${item}`).join('\n')}`)
-							}
-						} else if (typeof value === 'object' && value !== null) {
-							const nested = formatStructuredData(value)
-							if (nested.trim().length > 0) {
-								parts.push(`${formattedKey}:\n${nested.split('\n').map((line) => `  ${line}`).join('\n')}`)
-							}
-						} else if (typeof value === 'number' || typeof value === 'boolean') {
-							parts.push(`${formattedKey}: ${String(value)}`)
-						}
-					}
-					return parts.join('\n\n')
-				}
 
-				// 1) If the endpoint returned a direct `summary` field, use it.
-				const directSummary = (structured as { summary?: unknown }).summary
-				if (typeof directSummary === 'string' && directSummary.trim().length > 0) {
-					summaryText = directSummary
-				} else {
-					// 2) Try to detect a SOAP-style structure and format it nicely.
-					const maybeSoap = structured as {
-						subjective?: unknown
-						objective?: unknown
-						assessment?: unknown
-						plan?: unknown
-					}
-
-					const subjective = typeof maybeSoap.subjective === 'string' ? maybeSoap.subjective.trim() : ''
-					const objective = typeof maybeSoap.objective === 'string' ? maybeSoap.objective.trim() : ''
-					const assessment = typeof maybeSoap.assessment === 'string' ? maybeSoap.assessment.trim() : ''
-					const plan = typeof maybeSoap.plan === 'string' ? maybeSoap.plan.trim() : ''
-
-					const hasSoapContent = subjective || objective || assessment || plan
-					if (hasSoapContent) {
-						const parts: string[] = []
-						if (subjective) {
-							parts.push(`Subjective:\n${subjective}`)
-						}
-						if (objective) {
-							parts.push(`Objective:\n${objective}`)
-						}
-						if (assessment) {
-							parts.push(`Assessment:\n${assessment}`)
-						}
-						if (plan) {
-							parts.push(`Plan:\n${plan}`)
-						}
-						summaryText = parts.join('\n\n')
-					} else {
-						// 3) Fallback: format the entire structured data nicely.
-						summaryText = formatStructuredData(structured)
+						const lastStop = newSegments.length ? newSegments[newSegments.length - 1].stop : 0
+						setSummarizeSegments([
+							{
+								start: 0,
+								stop: lastStop,
+								text: finalText,
+							},
+						])
+						await copyAndPasteSummary(finalText)
+						hasSummary = true
 					}
 				}
-
-				if (summaryText && summaryText.trim().length > 0) {
-					const lastStop = newSegments.length ? newSegments[newSegments.length - 1].stop : 0
-					setSummarizeSegments([
-						{
-							start: 0,
-							stop: lastStop,
-							text: summaryText,
-						},
-					])
-					await copyAndPasteSummary(summaryText)
-					hasSummary = true
+			} else {
+				const diarizeOptions = {
+					threshold: preference.diarizeThreshold,
+					max_speakers: preference.maxSpeakers,
+					enabled: preference.recognizeSpeakers,
 				}
+				const res: transcript.Transcript = await invoke('transcribe', {
+					options: preference.modelOptions,
+					modelPath: preference.modelPath,
+					diarizeOptions,
+					ffmpegOptions: preference.ffmpegOptions,
+				})
+
+				newSegments = res.segments ?? []
+				setSegments(newSegments)
+
+				const total = Math.round((performance.now() - startTime) / 1000)
+				console.info(`Local transcribe took ${total} seconds.`)
+				hotToast.success(t('common.transcribe-took', { total: String(total) }), { position: 'bottom-center' })
 			}
 		} catch (error) {
 			if (!abortRef.current) {

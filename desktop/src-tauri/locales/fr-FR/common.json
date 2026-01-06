@@ -168,5 +168,5 @@
 	"use-word-timestamps": "Horodatages pour chaque mot",
 	"when-completing-transcription": "Quand la transcription est terminée",
 	"ytdlp-options": "Options de transcription URL",
-	"ytdlp-options-info": "VIBE utilise YTDLP pour la transcription d'URL."
+	"ytdlp-options-info": "Anamedi utilise YTDLP pour la transcription d'URL."
 }

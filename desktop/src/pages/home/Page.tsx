@@ -93,7 +93,9 @@ export default function Home() {
 							</>
 						)}
 
-						<ModelOptions options={vm.preference.modelOptions} setOptions={vm.preference.setModelOptions} />
+						{vm.preference.useLocalProcessing && (
+							<ModelOptions options={vm.preference.modelOptions} setOptions={vm.preference.setModelOptions} />
+						)}
 					</div>
 				</>
 			)}
@@ -104,7 +106,7 @@ export default function Home() {
 						<div className="join join-vertical">
 							<LanguageInput />
 							{!vm.files.length && <AudioInput onClick={vm.selectFiles} />}
-							<AdvancedTranscribe />
+							{vm.preference.useLocalProcessing && <AdvancedTranscribe />}
 						</div>
 						{vm.audio && (
 							<div>
@@ -124,7 +126,9 @@ export default function Home() {
 								<button onMouseDown={() => vm.transcribe(vm.files[0].path)} className="btn btn-primary mt-3">
 									{t('common.transcribe')}
 								</button>
-								<ModelOptions options={vm.preference.modelOptions} setOptions={vm.preference.setModelOptions} />
+								{vm.preference.useLocalProcessing && (
+									<ModelOptions options={vm.preference.modelOptions} setOptions={vm.preference.setModelOptions} />
+								)}
 							</>
 						)}
 					</div>

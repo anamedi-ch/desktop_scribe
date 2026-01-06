@@ -162,11 +162,11 @@
 	"try-again": "נסה שוב",
 	"update-now": "עדכן עכשיו",
 	"update-version": "עדכן לגרסה חדשה",
-	"updating-modal-body": "מעדכן את vibe לגרסה {{version}}",
+	"updating-modal-body": "מעדכן את Anamedi לגרסה {{version}}",
 	"updating-modal-title": "מעדכן...",
 	"use-gpu": "השתמש ב- GPU",
 	"use-word-timestamps": "חותמות זמן לכל מילה",
 	"when-completing-transcription": "בעת השלמת התמלול",
 	"ytdlp-options": "אפשרויות תמלול מאתרים",
-	"ytdlp-options-info": "VIBE משתמש ב- YTDLP לתמלול כתובת אתר."
+	"ytdlp-options-info": "Anamedi משתמש ב- YTDLP לתמלול כתובת אתר."
 }

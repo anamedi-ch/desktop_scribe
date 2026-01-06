@@ -107,62 +107,97 @@ export default function SettingsPage({ setVisible }: SettingsPageProps) {
 				</label>
 			</div>
 
-			<div className="label mt-10">
-				<span className="label-text flex items-center gap-1">
-					<InfoTooltip text={t('common.customize-info')} />
-					{t('common.customize')}
-				</span>
+			<div className="label mt-6">
+				<span className="label-text">Processing</span>
 			</div>
-			<div className="flex flex-col gap-1">
-				<label className="input input-bordered flex items-center gap-2">
+			<div className="form-control">
+				<label className="label cursor-pointer">
+					<span className="label-text">Use local processing (advanced)</span>
 					<input
-						type="text"
-						className="grow"
-						value={vm.downloadURL}
-						onChange={(event) => vm.setDownloadURL(event.target.value)}
-						placeholder={t('common.paste-model-link')}
-						onKeyDown={(event) => (event.key === 'Enter' ? vm.downloadModel() : null)}
+						type="checkbox"
+						className="toggle toggle-primary"
+						onChange={(e) => vm.preference.setUseLocalProcessing(e.target.checked)}
+						checked={vm.preference.useLocalProcessing}
 					/>
-					<svg
-						onClick={vm.downloadModel}
-						aria-hidden="true"
-						focusable="false"
-						role="img"
-						className="octicon octicon-download cursor-pointer"
-						viewBox="0 0 16 16"
-						width="16"
-						height="16"
-						fill="currentColor">
-						<path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"></path>
-						<path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.969a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.06l1.97 1.969Z"></path>
-					</svg>
 				</label>
-				<select
-					onFocus={vm.loadModels}
-					onChange={(e) => vm.preference.setModelPath(e.target.value)}
-					value={vm.preference.modelPath ?? undefined}
-					className="select select-bordered flex-1">
-					<option>{t('common.select-model')}</option>
-					{vm.models.map((model, index) => (
-						<option key={index} value={model.path}>
-							{model.name}
-						</option>
-					))}
-				</select>
-
-				<button onMouseDown={vm.openModelPath} className="btn bg-base-300 text-base-content">
-					{t('common.models-folder')}
-					<FolderIcon className="h-4 w-4" />
-				</button>
-				<button onMouseDown={vm.changeModelsFolder} className="btn bg-base-300 text-base-content">
-					{t('common.change-models-folder')}
-					<WrenchIcon className="h-4 w-4" />
-				</button>
-				<button onMouseDown={vm.openModelsUrl} className="btn bg-base-300 text-base-content">
-					{t('common.download-models-link')}
-					<LinkIcon className="w-4 h-4" />
-				</button>
 			</div>
+
+			{vm.preference.useLocalProcessing && (
+				<>
+					<div className="label mt-10">
+						<span className="label-text flex items-center gap-1">
+							<InfoTooltip text={t('common.customize-info')} />
+							{t('common.customize')}
+						</span>
+					</div>
+					<div className="flex flex-col gap-1">
+						<label className="input input-bordered flex items-center gap-2">
+							<input
+								type="text"
+								className="grow"
+								value={vm.downloadURL}
+								onChange={(event) => vm.setDownloadURL(event.target.value)}
+								placeholder={t('common.paste-model-link')}
+								onKeyDown={(event) => (event.key === 'Enter' ? vm.downloadModel() : null)}
+							/>
+							<svg
+								onClick={vm.downloadModel}
+								aria-hidden="true"
+								focusable="false"
+								role="img"
+								className="octicon octicon-download cursor-pointer"
+								viewBox="0 0 16 16"
+								width="16"
+								height="16"
+								fill="currentColor">
+								<path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"></path>
+								<path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.969a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.06l1.97 1.969Z"></path>
+							</svg>
+						</label>
+						<select
+							onFocus={vm.loadModels}
+							onChange={(e) => vm.preference.setModelPath(e.target.value)}
+							value={vm.preference.modelPath ?? undefined}
+							className="select select-bordered flex-1">
+							<option>{t('common.select-model')}</option>
+							{vm.models.map((model, index) => (
+								<option key={index} value={model.path}>
+									{model.name}
+								</option>
+							))}
+						</select>
+
+						<button onMouseDown={vm.openModelPath} className="btn bg-base-300 text-base-content">
+							{t('common.models-folder')}
+							<FolderIcon className="h-4 w-4" />
+						</button>
+						<button onMouseDown={vm.changeModelsFolder} className="btn bg-base-300 text-base-content">
+							{t('common.change-models-folder')}
+							<WrenchIcon className="h-4 w-4" />
+						</button>
+						<button onMouseDown={vm.openModelsUrl} className="btn bg-base-300 text-base-content">
+							{t('common.download-models-link')}
+							<LinkIcon className="w-4 h-4" />
+						</button>
+					</div>
+				</>
+			)}
+
+			<div className="label mt-10">
+				<span className="label-text">Anamedi</span>
+			</div>
+			<label className="form-control w-full">
+				<div className="label">
+					<span className="label-text">Anamedi x-api-key</span>
+				</div>
+				<input
+					type="text"
+					className="input input-bordered w-full"
+					value={vm.preference.anamediApiKey ?? ''}
+					onChange={(e) => vm.preference.setAnamediApiKey(e.target.value || null)}
+					placeholder="Enter your Anamedi x-api-key"
+				/>
+			</label>
 
 			<div className="label mt-10">
 				<span className="label-text">{t('common.general')}</span>
@@ -199,48 +234,52 @@ export default function SettingsPage({ setVisible }: SettingsPageProps) {
 				</button>
 			</div>
 
-			<div className="label mt-10">
-				<span className="label-text">{t('common.advanced')}</span>
-			</div>
-			<label className="form-control w-full py-2">
-				<span className="label-text flex items-center gap-1 cursor-default">
-					<InfoTooltip text={t('common.info-gpu-device')} />
-					{t('common.gpu-device')}
-				</span>
-				<input
-					value={vm.preference.gpuDevice}
-					onChange={(e) => vm.preference.setGpuDevice(parseInt(e.target.value) ?? 0)}
-					className="input input-bordered"
-					type="number"
-				/>
-			</label>
-			<div className="form-control">
-				<label className="label cursor-pointer">
-					<span className="label-text">{t('common.use-gpu')}</span>
-					<input
-						type="checkbox"
-						className="toggle toggle-primary"
-						onChange={(e) => vm.preference.setUseGpu(e.target.checked)}
-						checked={Boolean(vm.preference.useGpu)}
-					/>
-				</label>
-			</div>
-			{platform === 'windows' && (
-				<div className="form-control w-full mt-3">
-					<label className="label cursor-pointer">
+			{vm.preference.useLocalProcessing && (
+				<>
+					<div className="label mt-10">
+						<span className="label-text">{t('common.advanced')}</span>
+					</div>
+					<label className="form-control w-full py-2">
 						<span className="label-text flex items-center gap-1 cursor-default">
-							<InfoTooltip text={t('common.info-high-gpu-performance')} />
-							{t('common.high-gpu-performance')}
+							<InfoTooltip text={t('common.info-gpu-device')} />
+							{t('common.gpu-device')}
 						</span>
-
 						<input
-							type="checkbox"
-							className="toggle toggle-primary"
-							checked={vm.preference.highGraphicsPreference}
-							onChange={() => vm.preference.setHighGraphicsPreference(!vm.preference.highGraphicsPreference)}
+							value={vm.preference.gpuDevice}
+							onChange={(e) => vm.preference.setGpuDevice(parseInt(e.target.value) ?? 0)}
+							className="input input-bordered"
+							type="number"
 						/>
 					</label>
-				</div>
+					<div className="form-control">
+						<label className="label cursor-pointer">
+							<span className="label-text">{t('common.use-gpu')}</span>
+							<input
+								type="checkbox"
+								className="toggle toggle-primary"
+								onChange={(e) => vm.preference.setUseGpu(e.target.checked)}
+								checked={Boolean(vm.preference.useGpu)}
+							/>
+						</label>
+					</div>
+					{platform === 'windows' && (
+						<div className="form-control w-full mt-3">
+							<label className="label cursor-pointer">
+								<span className="label-text flex items-center gap-1 cursor-default">
+									<InfoTooltip text={t('common.info-high-gpu-performance')} />
+									{t('common.high-gpu-performance')}
+								</span>
+
+								<input
+									type="checkbox"
+									className="toggle toggle-primary"
+									checked={vm.preference.highGraphicsPreference}
+									onChange={() => vm.preference.setHighGraphicsPreference(!vm.preference.highGraphicsPreference)}
+								/>
+							</label>
+						</div>
+					)}
+				</>
 			)}
 
 			{/* Logs enabled by default currently */}
