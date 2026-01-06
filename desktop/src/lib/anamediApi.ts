@@ -32,7 +32,7 @@ export type AnamediTranscriptionResponse<TStructured extends AnamediJsonValue = 
 	structuredData: TStructured
 }
 
-export type AnamediTranscriptionRequest<TStructured extends AnamediJsonValue = AnamediJsonValue> = {
+export type AnamediTranscriptionRequest<_TStructured extends AnamediJsonValue = AnamediJsonValue> = {
 	audioPath: string
 	schema: AnamediJsonSchema
 	instructions?: string

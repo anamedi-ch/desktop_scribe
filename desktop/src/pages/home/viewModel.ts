@@ -48,7 +48,6 @@ export function viewModel() {
 	const [audio, setAudio] = useState<HTMLAudioElement | null>(null)
 	const [progress, setProgress] = useState<number | null>(0)
 	const { t } = useTranslation()
-	const toast = useToastProvider()
 	const [llm, setLlm] = useState<Llm | null>(null)
 	const [transcriptTab, setTranscriptTab] = useLocalStorage<'transcript' | 'summary'>('prefs_transcript_tab', 'transcript')
 	useConfirmExit((segments?.length ?? 0) > 0 || loading)
