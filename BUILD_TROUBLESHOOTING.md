@@ -3,46 +3,72 @@
 ## macOS: Updater Signing Key Error
 
 **Error:**
+
 ```
 failed to decode secret key: incorrect updater private key password: Missing comment in secret key
 ```
 
 **Solution:**
 
-The Tauri updater private key must include a comment. To fix this:
+The Tauri updater private key must be in the correct format. The easiest way is to use Tauri's built-in signer tool:
 
-1. **Generate a new key pair with a comment:**
-   ```bash
-   # Generate private key with comment
-   openssl genpkey -algorithm RSA -out private_key.pem -pkeyopt rsa_keygen_bits:4096 -aes256
-   
-   # Extract public key
-   openssl rsa -pubout -in private_key.pem -out public_key.pem
-   ```
+### Recommended: Use Tauri CLI Signer
 
-2. **Or use Tauri CLI to generate keys:**
-   ```bash
-   bunx tauri signer generate -w ~/.tauri/myapp.key
-   ```
+1. **Generate keys using Tauri CLI:**
+
+    ```bash
+    cd desktop
+    bunx tauri signer generate -w ~/.tauri/anamedi.key
+    ```
+
+    This will:
+    - Generate a private key at `~/.tauri/anamedi.key`
+    - Display the public key (base64 encoded)
+    - Ask for a password to encrypt the private key
+
+2. **Copy the public key** that's displayed and update `tauri.conf.json`:
+
+    ```json
+    {
+    	"plugins": {
+    		"updater": {
+    			"pubkey": "PASTE_THE_BASE64_PUBLIC_KEY_HERE"
+    		}
+    	}
+    }
+    ```
 
 3. **Update GitHub Secrets:**
-   - Go to: https://github.com/anamedi-ch/desktop_scribe/settings/secrets/actions
-   - Update `TAURI_PRIVATE_KEY` with the private key (including the comment)
-   - Update `TAURI_KEY_PASSWORD` with the password (if the key is encrypted)
-   - Update `TAURI_PUBLIC_KEY` in your `tauri.conf.json` with the public key
+    - Go to: https://github.com/anamedi-ch/desktop_scribe/settings/secrets/actions
+    - Update `TAURI_PRIVATE_KEY`: Copy the entire contents of `~/.tauri/anamedi.key` (including the `-----BEGIN` and `-----END` lines)
+    - Update `TAURI_KEY_PASSWORD`: The password you entered when generating the key
 
-4. **The public key format in `tauri.conf.json` should be:**
-   ```json
-   {
-     "plugins": {
-       "updater": {
-         "pubkey": "YOUR_PUBLIC_KEY_HERE"
-       }
-     }
-   }
-   ```
+### Alternative: Using OpenSSL (if you prefer)
 
-**Note:** The private key must be in PEM format with a comment (the line starting with `-----BEGIN` should have a comment after it, or the key should include metadata).
+If you're already using OpenSSL and it's asking for a pass phrase:
+
+1. **Enter a secure password** when prompted (remember this - you'll need it for GitHub Secrets)
+
+2. **After the key is generated, extract the public key:**
+
+    ```bash
+    openssl rsa -pubout -in private_key.pem -out public_key.pem
+    ```
+
+3. **Convert public key to base64 format for Tauri:**
+
+    ```bash
+    # Read the public key and convert to base64 (single line)
+    cat public_key.pem | base64 | tr -d '\n'
+    ```
+
+4. **Update `tauri.conf.json`** with the base64 public key
+
+5. **Update GitHub Secrets:**
+    - `TAURI_PRIVATE_KEY`: Contents of `private_key.pem` (entire file)
+    - `TAURI_KEY_PASSWORD`: The password you entered
+
+**Note:** The Tauri CLI method is recommended as it generates keys in the exact format Tauri expects.
 
 ## Windows: wget.exe Not Found
 
@@ -51,4 +77,3 @@ The Tauri updater private key must include a comment. To fix this:
 ## Linux: Missing libxdo Library
 
 **Fixed:** Added `libxdo-dev` to the Linux apt packages list. This is required by the `enigo` crate for Linux automation features.
-
