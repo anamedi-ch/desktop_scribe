@@ -376,96 +376,65 @@ export function viewModel() {
 		emit('stop_record')
 	}
 
-	async function copyAndPasteText(text: string, retries: number = 3): Promise<void> {
-		console.log('Starting copyAndPasteText, text length:', text.length)
+	/**
+	 * Copy summary text to clipboard and automatically paste it.
+	 * Shows notification to let user focus target window, then pastes.
+	 */
+	async function copySummaryToClipboard(text: string): Promise<void> {
+		console.log('Auto-paste: Copying summary to clipboard, text length:', text.length)
 		
-		for (let attempt = 1; attempt <= retries; attempt++) {
+		try {
+			// First, copy to clipboard
+			await clipboard.writeText(text)
+			console.log('✓ Summary copied to clipboard successfully')
+			
+			// Show notification to give user time to focus target window
+			hotToast.success(
+				'📋 Zusammenfassung wird in 2 Sekunden eingefügt...',
+				{ 
+					duration: 2500,
+					style: {
+						background: '#3B82F6',
+						color: 'white',
+						fontWeight: 'bold',
+						padding: '16px',
+						borderRadius: '10px',
+					}
+				}
+			)
+			
+			// Wait for user to click in target window
+			console.log('Waiting 2 seconds for user to focus target window...')
+			await new Promise((resolve) => setTimeout(resolve, 2000))
+			
+			// Try to paste
+			console.log('Attempting to simulate paste...')
 			try {
-				// Copy to clipboard
-				console.log(`Attempt ${attempt}: Copying to clipboard...`)
-				await clipboard.writeText(text)
-				console.log('Text copied to clipboard successfully')
-				
-				// Wait longer for clipboard to be ready, especially on macOS
-				// macOS clipboard can be slow, so we wait progressively longer
-				const waitTime = 400 + attempt * 100
-				console.log(`Waiting ${waitTime}ms for clipboard to be ready...`)
-				await new Promise((resolve) => setTimeout(resolve, waitTime))
-				
-				// Simulate paste
-				console.log(`Attempt ${attempt}: Simulating paste...`)
-				try {
-					await invoke('simulate_paste')
-					console.log(`✓ Successfully pasted text (attempt ${attempt})`)
-				} catch (pasteError) {
-					// Re-throw to be caught by outer catch block
-					console.error(`Paste simulation error:`, pasteError)
-					throw pasteError
-				}
-				
-				// Show success notification
-				hotToast.success('Summary pasted successfully', { duration: 2000 })
-				return
-			} catch (error) {
-				const errorMessage = String(error)
-				console.error(`✗ Failed to paste (attempt ${attempt}/${retries}):`, errorMessage)
-				
-				// Check if it's an accessibility permissions error
-				if (errorMessage.includes('Accessibility permissions') || 
-				    errorMessage.includes('accessibility') ||
-				    errorMessage.includes('Accessibility')) {
-					console.error('Accessibility permissions required for auto-paste')
-					hotToast.error(
-						'Accessibility permissions required for auto-paste. Please grant permissions in System Preferences > Security & Privacy > Accessibility',
-						{ duration: 6000 }
-					)
-					// Still copy to clipboard
-					try {
-						await clipboard.writeText(text)
-						console.log('Text copied to clipboard (paste requires permissions)')
-						hotToast.success('Text copied to clipboard. Please paste manually (Cmd+V)', { duration: 4000 })
-					} catch (clipboardError) {
-						console.error('Failed to copy to clipboard:', clipboardError)
+				await invoke('simulate_paste')
+				console.log('✓ Paste simulation completed')
+				hotToast.success(
+					'✓ Zusammenfassung eingefügt!',
+					{ 
+						duration: 2000,
+						style: {
+							background: '#10B981',
+							color: 'white',
+							fontWeight: 'bold',
+						}
 					}
-					return // Don't retry if permissions are missing
-				}
-				
-				if (attempt < retries) {
-					// Wait before retry with exponential backoff
-					const retryWait = 400 * attempt
-					console.log(`Waiting ${retryWait}ms before retry...`)
-					await new Promise((resolve) => setTimeout(resolve, retryWait))
-				} else {
-					console.error('Failed to paste after all retries')
-					// Still copy to clipboard even if paste fails
-					try {
-						await clipboard.writeText(text)
-						hotToast.error(
-							'Auto-paste failed after 3 attempts. Text copied to clipboard. Please paste manually (Cmd+V)',
-							{ duration: 5000 }
-						)
-						console.log('Text copied to clipboard (paste failed)')
-					} catch (clipboardError) {
-						console.error('Failed to copy to clipboard:', clipboardError)
-						hotToast.error('Failed to copy text to clipboard', { duration: 3000 })
-					}
-				}
+				)
+			} catch (pasteError) {
+				console.error('Paste simulation failed:', pasteError)
+				// Paste failed, but text is still in clipboard
+				hotToast.error(
+					'Auto-Einfügen fehlgeschlagen. Text wurde in die Zwischenablage kopiert - drücken Sie Cmd+V zum Einfügen.',
+					{ duration: 5000 }
+				)
 			}
+		} catch (error) {
+			console.error('Failed to copy to clipboard:', error)
+			hotToast.error('Fehler beim Kopieren in die Zwischenablage', { duration: 3000 })
 		}
-	}
-
-	async function copyAndPasteSummary(summaryText: string): Promise<void> {
-		// Show notification to user to click where they want to paste
-		// This ensures the paste goes to the right window
-		hotToast.success('Summary ready. Click where you want to paste, then it will paste automatically...', { 
-			duration: 4000,
-			icon: '📋'
-		})
-		
-		// Give user more time to click in the target window and ensure focus
-		await new Promise((resolve) => setTimeout(resolve, 2000))
-		
-		await copyAndPasteText(summaryText)
 	}
 
 	async function transcribe(path: string) {
@@ -534,7 +503,7 @@ export function viewModel() {
 							: null
 
 					console.log('Summary text extracted:', summaryText ? `Length: ${summaryText.length}` : 'null/empty')
-					console.log('Auto-paste enabled:', preferenceRef.current.autoPasteOnFinish)
+					console.log('Auto-copy to clipboard enabled:', preferenceRef.current.autoPasteOnFinish)
 
 					if (summaryText) {
 						// Optionally prepend title if available
@@ -551,12 +520,12 @@ export function viewModel() {
 								text: finalText,
 							},
 						])
-						// Auto-paste summary if enabled
+						// Auto-copy summary to clipboard if enabled
 						if (preferenceRef.current.autoPasteOnFinish) {
-							console.log('Calling copyAndPasteSummary with text length:', finalText.length)
-							await copyAndPasteSummary(finalText)
+							console.log('Auto-copying summary to clipboard, text length:', finalText.length)
+							await copySummaryToClipboard(finalText)
 						} else {
-							console.log('Auto-paste is disabled in preferences')
+							console.log('Auto-copy is disabled in preferences')
 						}
 						hasSummary = true
 					} else {
@@ -627,9 +596,9 @@ export function viewModel() {
 				const answer = await answerPromise
 				if (answer) {
 					setSummarizeSegments([{ start: 0, stop: newSegments?.[newSegments?.length - 1].stop ?? 0, text: answer }])
-					// Auto-paste summary if enabled
+					// Auto-copy summary to clipboard if enabled
 					if (preferenceRef.current.autoPasteOnFinish) {
-						await copyAndPasteSummary(answer)
+						await copySummaryToClipboard(answer)
 					}
 					hasSummary = true
 				}
