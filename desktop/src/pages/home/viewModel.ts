@@ -388,14 +388,20 @@ export function viewModel() {
 				
 				// Wait longer for clipboard to be ready, especially on macOS
 				// macOS clipboard can be slow, so we wait progressively longer
-				const waitTime = 300 + attempt * 150
+				const waitTime = 400 + attempt * 100
 				console.log(`Waiting ${waitTime}ms for clipboard to be ready...`)
 				await new Promise((resolve) => setTimeout(resolve, waitTime))
 				
 				// Simulate paste
 				console.log(`Attempt ${attempt}: Simulating paste...`)
-				await invoke('simulate_paste')
-				console.log(`✓ Successfully pasted text (attempt ${attempt})`)
+				try {
+					await invoke('simulate_paste')
+					console.log(`✓ Successfully pasted text (attempt ${attempt})`)
+				} catch (pasteError) {
+					// Re-throw to be caught by outer catch block
+					console.error(`Paste simulation error:`, pasteError)
+					throw pasteError
+				}
 				
 				// Show success notification
 				hotToast.success('Summary pasted successfully', { duration: 2000 })
@@ -452,12 +458,12 @@ export function viewModel() {
 		// Show notification to user to click where they want to paste
 		// This ensures the paste goes to the right window
 		hotToast.success('Summary ready. Click where you want to paste, then it will paste automatically...', { 
-			duration: 3000,
+			duration: 4000,
 			icon: '📋'
 		})
 		
-		// Give user a moment to click in the target window
-		await new Promise((resolve) => setTimeout(resolve, 1000))
+		// Give user more time to click in the target window and ensure focus
+		await new Promise((resolve) => setTimeout(resolve, 2000))
 		
 		await copyAndPasteText(summaryText)
 	}

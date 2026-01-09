@@ -616,43 +616,78 @@ pub fn simulate_paste() -> Result<()> {
     #[cfg(target_os = "macos")]
     {
         tracing::info!("Simulating Cmd+V paste on macOS");
-        // Use longer delays for more reliability on macOS
+        
+        // Use explicit Press/Release for both keys for better reliability
         // Press Cmd key
+        tracing::debug!("Pressing Cmd key...");
         enigo
             .key(Key::Meta, Direction::Press)
-            .map_err(|e| eyre::eyre!("Failed to press Cmd key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(100));
+            .map_err(|e| {
+                tracing::error!("Failed to press Cmd key: {:?}", e);
+                eyre::eyre!("Failed to press Cmd key: {:?}", e)
+            })?;
+        std::thread::sleep(std::time::Duration::from_millis(150));
 
-        // Press V key
+        // Press V key (explicit press, not click)
+        tracing::debug!("Pressing V key...");
         enigo
-            .key(Key::Unicode('v'), Direction::Click)
-            .map_err(|e| eyre::eyre!("Failed to press 'v' key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(100));
+            .key(Key::Unicode('v'), Direction::Press)
+            .map_err(|e| {
+                tracing::error!("Failed to press 'v' key: {:?}", e);
+                eyre::eyre!("Failed to press 'v' key: {:?}", e)
+            })?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        
+        // Release V key
+        tracing::debug!("Releasing V key...");
+        enigo
+            .key(Key::Unicode('v'), Direction::Release)
+            .map_err(|e| {
+                tracing::error!("Failed to release 'v' key: {:?}", e);
+                eyre::eyre!("Failed to release 'v' key: {:?}", e)
+            })?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
 
         // Release Cmd key
+        tracing::debug!("Releasing Cmd key...");
         enigo
             .key(Key::Meta, Direction::Release)
-            .map_err(|e| eyre::eyre!("Failed to release Cmd key: {:?}", e))?;
+            .map_err(|e| {
+                tracing::error!("Failed to release Cmd key: {:?}", e);
+                eyre::eyre!("Failed to release Cmd key: {:?}", e)
+            })?;
 
         // Additional delay to ensure paste completes
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        tracing::info!("Paste simulation completed");
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        tracing::info!("✓ Paste simulation completed successfully");
     }
 
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
+        tracing::info!("Simulating Ctrl+V paste on Windows/Linux");
+        
         enigo
             .key(Key::Control, Direction::Press)
             .map_err(|e| eyre::eyre!("Failed to press Ctrl key: {:?}", e))?;
         std::thread::sleep(std::time::Duration::from_millis(50));
+        
+        // Use explicit Press/Release for better reliability
         enigo
-            .key(Key::Unicode('v'), Direction::Click)
+            .key(Key::Unicode('v'), Direction::Press)
             .map_err(|e| eyre::eyre!("Failed to press 'v' key: {:?}", e))?;
         std::thread::sleep(std::time::Duration::from_millis(50));
+        
+        enigo
+            .key(Key::Unicode('v'), Direction::Release)
+            .map_err(|e| eyre::eyre!("Failed to release 'v' key: {:?}", e))?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        
         enigo
             .key(Key::Control, Direction::Release)
             .map_err(|e| eyre::eyre!("Failed to release Ctrl key: {:?}", e))?;
         std::thread::sleep(std::time::Duration::from_millis(50));
+        
+        tracing::info!("✓ Paste simulation completed successfully");
     }
 
     Ok(())
