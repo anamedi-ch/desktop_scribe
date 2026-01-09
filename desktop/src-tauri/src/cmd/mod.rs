@@ -598,6 +598,39 @@ pub fn get_cargo_features() -> Vec<String> {
     enabled_features
 }
 
+/// Fallback method using AppleScript to simulate Cmd+V paste on macOS
+#[cfg(target_os = "macos")]
+fn simulate_paste_applescript() -> Result<()> {
+    use std::process::Command;
+    
+    tracing::info!("Using AppleScript to simulate Cmd+V paste");
+    
+    // AppleScript to simulate Cmd+V
+    let script = r#"
+        tell application "System Events"
+            keystroke "v" using command down
+        end tell
+    "#;
+    
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+        .map_err(|e| eyre::eyre!("Failed to execute AppleScript: {:?}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::error!("AppleScript failed: {}", stderr);
+        return Err(eyre::eyre!(
+            "AppleScript paste failed: {}. Accessibility permissions may be required.",
+            stderr
+        ));
+    }
+    
+    tracing::info!("✓ Paste simulation completed successfully with AppleScript");
+    Ok(())
+}
+
 #[tauri::command]
 pub fn simulate_paste() -> Result<()> {
     use enigo::*;
@@ -617,49 +650,71 @@ pub fn simulate_paste() -> Result<()> {
     {
         tracing::info!("Simulating Cmd+V paste on macOS");
         
-        // Use explicit Press/Release for both keys for better reliability
-        // Press Cmd key
-        tracing::debug!("Pressing Cmd key...");
-        enigo
-            .key(Key::Meta, Direction::Press)
-            .map_err(|e| {
-                tracing::error!("Failed to press Cmd key: {:?}", e);
-                eyre::eyre!("Failed to press Cmd key: {:?}", e)
-            })?;
-        std::thread::sleep(std::time::Duration::from_millis(150));
-
-        // Press V key (explicit press, not click)
-        tracing::debug!("Pressing V key...");
-        enigo
-            .key(Key::Unicode('v'), Direction::Press)
-            .map_err(|e| {
-                tracing::error!("Failed to press 'v' key: {:?}", e);
-                eyre::eyre!("Failed to press 'v' key: {:?}", e)
-            })?;
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Check permissions first
+        use crate::utils::has_accessibility_permissions;
+        if !has_accessibility_permissions() {
+            tracing::warn!("Accessibility permissions not granted. Attempting AppleScript fallback...");
+            // Try AppleScript as fallback
+            return simulate_paste_applescript();
+        }
         
-        // Release V key
-        tracing::debug!("Releasing V key...");
-        enigo
-            .key(Key::Unicode('v'), Direction::Release)
-            .map_err(|e| {
-                tracing::error!("Failed to release 'v' key: {:?}", e);
-                eyre::eyre!("Failed to release 'v' key: {:?}", e)
-            })?;
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Try Enigo first
+        let enigo_result = (|| -> Result<()> {
+            // Use explicit Press/Release for both keys for better reliability
+            // Press Cmd key
+            tracing::debug!("Pressing Cmd key...");
+            enigo
+                .key(Key::Meta, Direction::Press)
+                .map_err(|e| {
+                    tracing::error!("Failed to press Cmd key: {:?}", e);
+                    eyre::eyre!("Failed to press Cmd key: {:?}", e)
+                })?;
+            std::thread::sleep(std::time::Duration::from_millis(150));
 
-        // Release Cmd key
-        tracing::debug!("Releasing Cmd key...");
-        enigo
-            .key(Key::Meta, Direction::Release)
-            .map_err(|e| {
-                tracing::error!("Failed to release Cmd key: {:?}", e);
-                eyre::eyre!("Failed to release Cmd key: {:?}", e)
-            })?;
+            // Press V key (explicit press, not click)
+            tracing::debug!("Pressing V key...");
+            enigo
+                .key(Key::Unicode('v'), Direction::Press)
+                .map_err(|e| {
+                    tracing::error!("Failed to press 'v' key: {:?}", e);
+                    eyre::eyre!("Failed to press 'v' key: {:?}", e)
+                })?;
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            
+            // Release V key
+            tracing::debug!("Releasing V key...");
+            enigo
+                .key(Key::Unicode('v'), Direction::Release)
+                .map_err(|e| {
+                    tracing::error!("Failed to release 'v' key: {:?}", e);
+                    eyre::eyre!("Failed to release 'v' key: {:?}", e)
+                })?;
+            std::thread::sleep(std::time::Duration::from_millis(50));
 
-        // Additional delay to ensure paste completes
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        tracing::info!("✓ Paste simulation completed successfully");
+            // Release Cmd key
+            tracing::debug!("Releasing Cmd key...");
+            enigo
+                .key(Key::Meta, Direction::Release)
+                .map_err(|e| {
+                    tracing::error!("Failed to release Cmd key: {:?}", e);
+                    eyre::eyre!("Failed to release Cmd key: {:?}", e)
+                })?;
+
+            // Additional delay to ensure paste completes
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            Ok(())
+        })();
+        
+        return match enigo_result {
+            Ok(_) => {
+                tracing::info!("✓ Paste simulation completed successfully with Enigo");
+                Ok(())
+            }
+            Err(e) => {
+                tracing::warn!("Enigo paste failed: {:?}. Trying AppleScript fallback...", e);
+                simulate_paste_applescript()
+            }
+        };
     }
 
     #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -688,8 +743,10 @@ pub fn simulate_paste() -> Result<()> {
         std::thread::sleep(std::time::Duration::from_millis(50));
         
         tracing::info!("✓ Paste simulation completed successfully");
+        return Ok(());
     }
 
+    #[allow(unreachable_code)]
     Ok(())
 }
 
