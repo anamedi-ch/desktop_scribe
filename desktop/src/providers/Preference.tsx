@@ -73,6 +73,14 @@ export interface Preference {
 	setAnamediApiKey: ModifyState<string | null>
 	useLocalProcessing: boolean
 	setUseLocalProcessing: ModifyState<boolean>
+	autoPasteOnFinish: boolean
+	setAutoPasteOnFinish: ModifyState<boolean>
+	globalShortcutModifiers: string
+	setGlobalShortcutModifiers: ModifyState<string>
+	globalShortcutKey: string
+	setGlobalShortcutKey: ModifyState<string>
+	summaryTemplate: string
+	setSummaryTemplate: ModifyState<string>
 }
 
 // Create the context
@@ -169,6 +177,10 @@ export function PreferenceProvider({ children }: { children: ReactNode }) {
 	})
 	const [anamediApiKey, setAnamediApiKey] = useLocalStorage<string | null>('prefs_anamedi_api_key', null)
 	const [useLocalProcessing, setUseLocalProcessing] = useLocalStorage<boolean>('prefs_use_local_processing', false)
+	const [autoPasteOnFinish, setAutoPasteOnFinish] = useLocalStorage<boolean>('prefs_auto_paste_on_finish', false)
+	const [globalShortcutModifiers, setGlobalShortcutModifiers] = useLocalStorage<string>('prefs_global_shortcut_modifiers', 'Alt+Shift')
+	const [globalShortcutKey, setGlobalShortcutKey] = useLocalStorage<string>('prefs_global_shortcut_key', 'R')
+	const [summaryTemplate, setSummaryTemplate] = useLocalStorage<string>('prefs_summary_template', 'SOAP')
 
 	useEffect(() => {
 		setIsFirstRun(false)
@@ -277,6 +289,14 @@ export function PreferenceProvider({ children }: { children: ReactNode }) {
 		setAnamediApiKey,
 		useLocalProcessing,
 		setUseLocalProcessing,
+		autoPasteOnFinish,
+		setAutoPasteOnFinish,
+		globalShortcutModifiers,
+		setGlobalShortcutModifiers,
+		globalShortcutKey,
+		setGlobalShortcutKey,
+		summaryTemplate,
+		setSummaryTemplate,
 	}
 
 	return <PreferenceContext.Provider value={preference}>{children}</PreferenceContext.Provider>

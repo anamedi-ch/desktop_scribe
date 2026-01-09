@@ -1,16 +1,13 @@
 import * as shell from '@tauri-apps/plugin-shell'
 import { useTranslation } from 'react-i18next'
+import { invoke } from '@tauri-apps/api/core'
 import { InfoTooltip } from '~/components/InfoTooltip'
 import { ReactComponent as ChevronLeftIcon } from '~/icons/chevron-left.svg'
 import { ReactComponent as ChevronRightIcon } from '~/icons/chevron-right.svg'
 import { ReactComponent as FolderIcon } from '~/icons/folder.svg'
-import { ReactComponent as GithubIcon } from '~/icons/github.svg'
-import { ReactComponent as HeartIcon } from '~/icons/heart.svg'
 import { ReactComponent as LinkIcon } from '~/icons/link.svg'
 import { ReactComponent as ResetIcon } from '~/icons/reset.svg'
-import { ReactComponent as DiscordIcon } from '~/icons/discord.svg'
 import { ReactComponent as WrenchIcon } from '~/icons/wrench.svg'
-import { ReactComponent as CopyIcon } from '~/icons/copy.svg'
 
 import * as config from '~/lib/config'
 import { supportedLanguages } from '~/lib/i18n'
@@ -103,6 +100,15 @@ export default function SettingsPage({ setVisible }: SettingsPageProps) {
 						className="toggle toggle-primary"
 						onChange={(e) => vm.preference.setFocusOnFinish(e.target.checked)}
 						checked={vm.preference.focusOnFinish}
+					/>
+				</label>
+				<label className="label cursor-pointer">
+					<span className="label-text">{t('common.auto-paste-on-finish')}</span>
+					<input
+						type="checkbox"
+						className="toggle toggle-primary"
+						onChange={(e) => vm.preference.setAutoPasteOnFinish(e.target.checked)}
+						checked={vm.preference.autoPasteOnFinish}
 					/>
 				</label>
 			</div>
@@ -200,6 +206,78 @@ export default function SettingsPage({ setVisible }: SettingsPageProps) {
 			</label>
 
 			<div className="label mt-10">
+				<span className="label-text">{t('common.global-shortcut')}</span>
+			</div>
+
+			<div className="form-control mb-4">
+				<label className="label">
+					<span className="label-text">{t('common.global-shortcut-modifiers')}</span>
+				</label>
+				<select
+					className="select select-bordered w-full"
+					value={vm.preference.globalShortcutModifiers}
+					onChange={async (e) => {
+						vm.preference.setGlobalShortcutModifiers(e.target.value)
+						// Re-register shortcut
+						try {
+							await invoke('register_global_shortcut', {
+								modifiers: e.target.value,
+								key: vm.preference.globalShortcutKey,
+							})
+						} catch (error) {
+							console.error('Failed to register shortcut:', error)
+						}
+					}}
+				>
+					<option value="Alt+Shift">Alt+Shift (Option+Shift on macOS)</option>
+					<option value="Ctrl+Shift">Ctrl+Shift</option>
+					<option value="Meta+Shift">Meta+Shift (Cmd+Shift on macOS)</option>
+					<option value="Alt">Alt (Option on macOS)</option>
+					<option value="Ctrl">Ctrl</option>
+					<option value="Meta">Meta (Cmd on macOS)</option>
+				</select>
+			</div>
+
+			<div className="form-control mb-4">
+				<label className="label">
+					<span className="label-text">{t('common.global-shortcut-key')}</span>
+				</label>
+				<select
+					className="select select-bordered w-full"
+					value={vm.preference.globalShortcutKey}
+					onChange={async (e) => {
+						vm.preference.setGlobalShortcutKey(e.target.value)
+						// Re-register shortcut
+						try {
+							await invoke('register_global_shortcut', {
+								modifiers: vm.preference.globalShortcutModifiers,
+								key: e.target.value,
+							})
+						} catch (error) {
+							console.error('Failed to register shortcut:', error)
+						}
+					}}
+				>
+					<option value="R">R</option>
+					<option value="T">T</option>
+					<option value="S">S</option>
+					<option value="Space">Space</option>
+					<option value="F1">F1</option>
+					<option value="F2">F2</option>
+					<option value="F3">F3</option>
+					<option value="F4">F4</option>
+					<option value="F5">F5</option>
+					<option value="F6">F6</option>
+					<option value="F7">F7</option>
+					<option value="F8">F8</option>
+					<option value="F9">F9</option>
+					<option value="F10">F10</option>
+					<option value="F11">F11</option>
+					<option value="F12">F12</option>
+				</select>
+			</div>
+
+			<div className="label mt-10">
 				<span className="label-text">{t('common.general')}</span>
 			</div>
 
@@ -216,21 +294,12 @@ export default function SettingsPage({ setVisible }: SettingsPageProps) {
 			</div>
 
 			<div className="flex flex-col gap-1">
-				<button onMouseDown={() => shell.open(config.aboutURL)} className="btn bg-base-300 text-base-content">
+				<button onMouseDown={() => shell.open('https://www.anamedi.com')} className="btn bg-base-300 text-base-content">
 					{t('common.project-link')}
 					<LinkIcon className="w-4 h-4" />
 				</button>
 				<button onMouseDown={vm.reportIssue} className="btn bg-base-300 text-base-content">
 					{t('common.report-issue')}
-					<GithubIcon className="w-4 h-4" />
-				</button>
-				<button onMouseDown={() => shell.open(config.supportVibeURL)} className="btn bg-base-300 text-base-content">
-					{t('common.support-the-project')}
-					<HeartIcon fill="#db61a2" className="w-4 h-4 stroke-2" />
-				</button>
-				<button onMouseDown={() => shell.open(config.discordURL)} className="btn bg-base-300 text-base-content">
-					{t('common.discord-community')}
-					<DiscordIcon className="w-4 h-4" />
 				</button>
 			</div>
 
@@ -300,10 +369,6 @@ export default function SettingsPage({ setVisible }: SettingsPageProps) {
 			</div> */}
 
 			<div className="flex flex-col gap-1">
-				<button onMouseDown={vm.copyLogs} className="btn bg-base-300 text-base-content">
-					{t('common.copy-logs')}
-					<CopyIcon className="h-4 w-4" />
-				</button>
 				<button onMouseDown={vm.revealLogs} className="btn bg-base-300 text-base-content">
 					{t('common.logs-folder')}
 					<FolderIcon className="h-4 w-4" />

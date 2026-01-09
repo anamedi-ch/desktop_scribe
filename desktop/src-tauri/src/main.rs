@@ -69,10 +69,27 @@ fn main() -> Result<()> {
             tracing::info!("Attempting to register global shortcut: modifiers={:?} (bits: {:b}), code={:?}", modifiers, modifiers.bits(), Code::KeyR);
             
             // Use on_shortcut which should register and set up handler in one call
+            // Add debouncing to prevent multiple rapid triggers
+            use std::sync::atomic::{AtomicBool, Ordering};
+            use std::sync::Arc;
+            let shortcut_debounce = Arc::new(AtomicBool::new(false));
+            let shortcut_debounce_clone = shortcut_debounce.clone();
+            
             match app_handle.global_shortcut().on_shortcut(shortcut, move |app, _shortcut, _event| {
+                // Debounce: ignore if already processing
+                if shortcut_debounce_clone
+                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_err()
+                {
+                    tracing::debug!("Shortcut already being processed, ignoring duplicate");
+                    return;
+                }
+                
                 eprintln!("🔥🔥🔥 Global shortcut pressed! Toggling recording...");
                 tracing::info!("🔥🔥🔥 Global shortcut pressed! Toggling recording...");
                 let app_handle = app.app_handle().clone();
+                let debounce = shortcut_debounce_clone.clone();
+                
                 tauri::async_runtime::spawn(async move {
                     tracing::info!("Executing toggle_record_internal...");
                     match cmd::audio::toggle_record_internal(app_handle).await {
@@ -83,6 +100,9 @@ fn main() -> Result<()> {
                             tracing::error!("✗ Failed to toggle recording: {:?}", e);
                         }
                     }
+                    // Reset debounce after a short delay
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    debounce.store(false, Ordering::SeqCst);
                 });
             }) {
                 Ok(_) => {
@@ -180,6 +200,8 @@ fn main() -> Result<()> {
             cmd::is_crashed_recently,
             cmd::rename_crash_file,
             cmd::simulate_paste,
+            cmd::register_global_shortcut,
+            cmd::unregister_all_shortcuts,
             #[cfg(windows)]
             cmd::set_high_gpu_preference
         ])

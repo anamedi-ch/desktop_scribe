@@ -15,6 +15,7 @@ use tauri::{
     Manager,
 };
 use tauri::{Emitter, Listener, State};
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 use vibe_core::get_vibe_temp_folder;
@@ -600,26 +601,175 @@ pub fn get_cargo_features() -> Vec<String> {
 #[tauri::command]
 pub fn simulate_paste() -> Result<()> {
     use enigo::*;
+
+    // Don't check permissions upfront - let Enigo try and fail naturally if permissions aren't granted.
+    // The AXIsProcessTrusted() check can be unreliable (false negatives) even when permissions are granted.
+    // Enigo's own initialization and key press errors will provide more accurate feedback.
     let settings = Settings::default();
-    let mut enigo = Enigo::new(&settings)?;
+    let mut enigo = Enigo::new(&settings).map_err(|e| {
+        eyre::eyre!(
+            "Failed to initialize Enigo: {:?}. Accessibility permissions may be required.",
+            e
+        )
+    })?;
 
     #[cfg(target_os = "macos")]
     {
-        enigo.key(Key::Meta, Direction::Press)?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        enigo.key(Key::Unicode('v'), Direction::Click)?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        enigo.key(Key::Meta, Direction::Release)?;
+        tracing::info!("Simulating Cmd+V paste on macOS");
+        // Use longer delays for more reliability on macOS
+        // Press Cmd key
+        enigo
+            .key(Key::Meta, Direction::Press)
+            .map_err(|e| eyre::eyre!("Failed to press Cmd key: {:?}", e))?;
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Press V key
+        enigo
+            .key(Key::Unicode('v'), Direction::Click)
+            .map_err(|e| eyre::eyre!("Failed to press 'v' key: {:?}", e))?;
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Release Cmd key
+        enigo
+            .key(Key::Meta, Direction::Release)
+            .map_err(|e| eyre::eyre!("Failed to release Cmd key: {:?}", e))?;
+
+        // Additional delay to ensure paste completes
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        tracing::info!("Paste simulation completed");
     }
 
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
-        enigo.key(Key::Control, Direction::Press)?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        enigo.key(Key::Unicode('v'), Direction::Click)?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        enigo.key(Key::Control, Direction::Release)?;
+        enigo
+            .key(Key::Control, Direction::Press)
+            .map_err(|e| eyre::eyre!("Failed to press Ctrl key: {:?}", e))?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        enigo
+            .key(Key::Unicode('v'), Direction::Click)
+            .map_err(|e| eyre::eyre!("Failed to press 'v' key: {:?}", e))?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        enigo
+            .key(Key::Control, Direction::Release)
+            .map_err(|e| eyre::eyre!("Failed to release Ctrl key: {:?}", e))?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
 
+    Ok(())
+}
+
+/// Register a global shortcut dynamically
+#[tauri::command]
+pub async fn register_global_shortcut(app_handle: tauri::AppHandle, modifiers: String, key: String) -> Result<String> {
+    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+
+    // Parse modifiers
+    let mut mod_flags = Modifiers::empty();
+    let mod_parts: Vec<&str> = modifiers.split('+').map(|s| s.trim()).collect();
+    for part in mod_parts {
+        match part.to_lowercase().as_str() {
+            "alt" | "option" | "opt" => mod_flags |= Modifiers::ALT,
+            "ctrl" | "control" => mod_flags |= Modifiers::CONTROL,
+            "meta" | "cmd" | "command" => mod_flags |= Modifiers::META,
+            "shift" => mod_flags |= Modifiers::SHIFT,
+            _ => {}
+        }
+    }
+
+    // Parse key code
+    let key_code = match key.to_uppercase().as_str() {
+        "A" => Code::KeyA,
+        "B" => Code::KeyB,
+        "C" => Code::KeyC,
+        "D" => Code::KeyD,
+        "E" => Code::KeyE,
+        "F" => Code::KeyF,
+        "G" => Code::KeyG,
+        "H" => Code::KeyH,
+        "I" => Code::KeyI,
+        "J" => Code::KeyJ,
+        "K" => Code::KeyK,
+        "L" => Code::KeyL,
+        "M" => Code::KeyM,
+        "N" => Code::KeyN,
+        "O" => Code::KeyO,
+        "P" => Code::KeyP,
+        "Q" => Code::KeyQ,
+        "R" => Code::KeyR,
+        "S" => Code::KeyS,
+        "T" => Code::KeyT,
+        "U" => Code::KeyU,
+        "V" => Code::KeyV,
+        "W" => Code::KeyW,
+        "X" => Code::KeyX,
+        "Y" => Code::KeyY,
+        "Z" => Code::KeyZ,
+        "SPACE" | " " => Code::Space,
+        "ENTER" | "RETURN" => Code::Enter,
+        "ESC" | "ESCAPE" => Code::Escape,
+        "F1" => Code::F1,
+        "F2" => Code::F2,
+        "F3" => Code::F3,
+        "F4" => Code::F4,
+        "F5" => Code::F5,
+        "F6" => Code::F6,
+        "F7" => Code::F7,
+        "F8" => Code::F8,
+        "F9" => Code::F9,
+        "F10" => Code::F10,
+        "F11" => Code::F11,
+        "F12" => Code::F12,
+        _ => {
+            return Err(eyre::eyre!(
+                "Unsupported key: {}. Supported keys: A-Z, Space, Enter, Esc, F1-F12",
+                key
+            ));
+        }
+    };
+
+    let shortcut = Shortcut::new(Some(mod_flags), key_code);
+
+    // Register new shortcut with debouncing
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    let shortcut_debounce = Arc::new(AtomicBool::new(false));
+    let shortcut_debounce_clone = shortcut_debounce.clone();
+
+    // Use on_shortcut which registers and sets handler in one call
+    app_handle
+        .global_shortcut()
+        .on_shortcut(shortcut, move |app, _shortcut, _event| {
+            if shortcut_debounce_clone
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+            {
+                return;
+            }
+
+            let app_handle = app.app_handle().clone();
+            let debounce = shortcut_debounce_clone.clone();
+
+            tauri::async_runtime::spawn(async move {
+                match crate::cmd::audio::toggle_record_internal(app_handle).await {
+                    Ok(_) => tracing::info!("✓ Successfully toggled recording"),
+                    Err(e) => tracing::error!("✗ Failed to toggle recording: {:?}", e),
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                debounce.store(false, Ordering::SeqCst);
+            });
+        })
+        .map_err(|e| eyre::eyre!("Failed to register shortcut: {:?}", e))?;
+
+    tracing::info!("Registered global shortcut: {} + {}", modifiers, key);
+    Ok(format!("{}+{}", modifiers, key))
+}
+
+/// Unregister all global shortcuts (helper function)
+#[tauri::command]
+pub fn unregister_all_shortcuts(_app_handle: tauri::AppHandle) -> Result<()> {
+    // Note: Tauri's global_shortcut plugin doesn't provide a way to list/unregister
+    // all shortcuts easily. This would need to be handled by storing shortcut IDs.
+    // For now, we'll rely on re-registering to replace the old one.
+    tracing::info!("Shortcut unregistration requested (will be replaced on next registration)");
     Ok(())
 }

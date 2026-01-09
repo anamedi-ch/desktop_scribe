@@ -63,7 +63,7 @@ export default function Home() {
 						<div className="">
 							<AudioDeviceInput device={vm.inputDevice} setDevice={vm.setInputDevice} devices={vm.devices} type="input" />
 							<AudioDeviceInput device={vm.outputDevice} setDevice={vm.setOutputDevice} devices={vm.devices} type="output" />
-							<label className="label cursor-pointer mt-2 mb-5">
+							<label className="label cursor-pointer mt-2 mb-2">
 								<span className="label-text">{t('common.save-record-in-documents-folder')}</span>
 								<input
 									type="checkbox"
@@ -72,6 +72,24 @@ export default function Home() {
 									checked={vm.preference.storeRecordInDocuments}
 								/>
 							</label>
+							{!vm.preference.useLocalProcessing && (
+								<div className="form-control mb-2">
+									<label className="label">
+										<span className="label-text">{t('common.summary-template')}</span>
+									</label>
+									<select
+										className="select select-bordered w-full"
+										value={vm.preference.summaryTemplate || 'SOAP'}
+										onChange={(e) => vm.preference.setSummaryTemplate(e.target.value)}
+									>
+										{vm.summaryTemplates.map((template) => (
+											<option key={template.id} value={template.id}>
+												{template.name}
+											</option>
+										))}
+									</select>
+								</div>
+							)}
 						</div>
 						{!vm.isRecording && (
 							<button onMouseDown={() => vm.startRecord()} className="btn btn-primary mt-3">
@@ -81,6 +99,10 @@ export default function Home() {
 
 						{vm.isRecording && (
 							<>
+								<div className="text-center mt-3 mb-2">
+									<div className="text-2xl font-mono font-bold">{vm.recordingDuration}</div>
+									<div className="text-sm opacity-70">{t('common.recording-duration')}</div>
+								</div>
 								<button
 									onMouseDown={() => {
 										keepAwake.stop()

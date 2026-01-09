@@ -8,7 +8,7 @@ use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl};
+use tauri::{AppHandle, Emitter, Listener, Manager};
 use vibe_core::get_vibe_temp_folder;
 
 #[cfg(target_os = "macos")]
@@ -23,64 +23,16 @@ static IS_TOGGLING: AtomicBool = AtomicBool::new(false);
 static LAST_DEVICES: Mutex<Option<Vec<AudioDevice>>> = Mutex::new(None);
 static LAST_STORE_IN_DOCUMENTS: Mutex<Option<bool>> = Mutex::new(None);
 
-fn show_recording_overlay(app_handle: &AppHandle) -> Result<()> {
-    let overlay_window_id = "recording_overlay";
-
-    // Check if window already exists
-    if let Some(window) = app_handle.get_webview_window(overlay_window_id) {
-        // Show window (Tauri's always_on_top and focused(false) should handle most cases)
-        window.show().map_err(|e| eyre!("Failed to show overlay window: {:?}", e))?;
-        // Enable click-through for existing window
-        window.set_ignore_cursor_events(true).map_err(|e| eyre!("Failed to set ignore cursor events: {:?}", e))?;
-        return Ok(());
-    }
-
-    // Create new overlay window
-    // Note: Transparency is handled via CSS in the HTML file
-    // Create as hidden first so we can configure it before showing
-    let window = tauri::WebviewWindowBuilder::new(
-        app_handle,
-        overlay_window_id,
-        WebviewUrl::App("recording-overlay.html".into()),
-    )
-    .inner_size(100.0, 70.0)
-    .resizable(false)
-    .decorations(false)
-    .always_on_top(true)
-    .visible(false)
-    .focused(false)
-    .build()
-    .map_err(|e| eyre!("Failed to create overlay window: {:?}", e))?;
-
-    // Enable click-through so the window doesn't block mouse events
-    window.set_ignore_cursor_events(true).map_err(|e| eyre!("Failed to set ignore cursor events: {:?}", e))?;
-
-    // Show window (Tauri's always_on_top and focused(false) should handle most cases)
-    window.show().map_err(|e| eyre!("Failed to show overlay window: {:?}", e))?;
-
-    // Position window in bottom-right corner of primary monitor
-    if let Ok(primary_monitor) = window.primary_monitor() {
-        if let Some(monitor) = primary_monitor {
-            let monitor_size = monitor.size().to_logical::<f64>(monitor.scale_factor());
-            let window_size = window.inner_size().map_err(|e| eyre!("Failed to get window size: {:?}", e))?;
-            let x = monitor_size.width - window_size.width as f64 - 20.0;
-            let y = monitor_size.height - window_size.height as f64 - 20.0;
-            window
-                .set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))
-                .ok();
-        }
-    }
-
+fn show_recording_notification(app_handle: &AppHandle) -> Result<()> {
+    // Emit event to frontend to show notification
+    // Frontend will use Web Notification API which is more reliable than overlay windows
+    app_handle.emit("show_recording_notification", json!({"status": "started"}))?;
     Ok(())
 }
 
-fn hide_recording_overlay(app_handle: &AppHandle) -> Result<()> {
-    let overlay_window_id = "recording_overlay";
-
-    if let Some(window) = app_handle.get_webview_window(overlay_window_id) {
-        window.hide().map_err(|e| eyre!("Failed to hide overlay window: {:?}", e))?;
-    }
-
+fn hide_recording_notification(app_handle: &AppHandle) -> Result<()> {
+    // Emit event to frontend to show notification
+    app_handle.emit("show_recording_notification", json!({"status": "stopped"}))?;
     Ok(())
 }
 
@@ -165,10 +117,10 @@ pub async fn start_record(app_handle: AppHandle, devices: Vec<AudioDevice>, stor
 
     // Notify frontend that recording has started
     app_handle.emit("record_started", ())?;
-    // Show recording overlay (configured to not steal focus)
-    show_recording_overlay(&app_handle)
+    // Show recording notification (more reliable than overlay window)
+    show_recording_notification(&app_handle)
         .map_err(|e| {
-            tracing::warn!("Failed to show recording overlay: {:?}", e);
+            tracing::warn!("Failed to show recording notification: {:?}", e);
             e
         })
         .ok();
@@ -270,9 +222,9 @@ pub async fn start_record(app_handle: AppHandle, devices: Vec<AudioDevice>, stor
     let app_handle_clone = app_handle.clone();
     app_handle.once("stop_record", move |_event| {
         IS_RECORDING.store(false, Ordering::SeqCst);
-        // Hide recording overlay
-        hide_recording_overlay(&app_handle_clone).map_err(|e| {
-            tracing::warn!("Failed to hide recording overlay: {:?}", e);
+        // Show recording stopped notification
+        hide_recording_notification(&app_handle_clone).map_err(|e| {
+            tracing::warn!("Failed to show recording stopped notification: {:?}", e);
             e
         }).ok();
         for (i, stream_handle) in stream_handles.iter().enumerate() {
@@ -347,6 +299,9 @@ pub async fn start_record(app_handle: AppHandle, devices: Vec<AudioDevice>, stor
         }
         // Ensure state is false when recording finishes (in case it wasn't already)
         IS_RECORDING.store(false, Ordering::SeqCst);
+        // Emit record_stopped again to ensure frontend state is updated
+        app_handle_clone.emit("record_stopped", ()).map_err(|e| eyre!("{e:?}")).log_error();
+        // Then emit record_finish
         app_handle_clone.emit(
             "record_finish",
             json!({"path": normalized.to_string_lossy(), "name": normalized.file_name().map(|n| n.to_str().unwrap_or_default()).unwrap_or_default()}),
@@ -411,10 +366,10 @@ pub async fn toggle_record_internal(app_handle: AppHandle) -> Result<()> {
         IS_RECORDING.store(false, Ordering::SeqCst);
         // Notify frontend immediately that recording stopped
         app_handle.emit("record_stopped", ())?;
-        // Hide recording overlay
-        hide_recording_overlay(&app_handle)
+        // Show recording stopped notification
+        hide_recording_notification(&app_handle)
             .map_err(|e| {
-                tracing::warn!("Failed to hide recording overlay: {:?}", e);
+                tracing::warn!("Failed to show recording stopped notification: {:?}", e);
                 e
             })
             .ok();

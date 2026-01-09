@@ -71,9 +71,14 @@ export async function resetApp() {
 }
 
 export async function getIssueUrl(logs: string) {
-	return `https://github.com/thewh1teagle/vibe/issues/new?assignees=octocat&labels=bug&projects=&template=bug_report.yaml&title=App+reports+bug+&logs=${encodeURIComponent(
-		logs
-	)}`
+	const subject = encodeURIComponent('Anamedi Desktop - Problem Report')
+	const body = encodeURIComponent(
+		`Hallo Anamedi Team,\n\nIch melde ein Problem mit der Anamedi Desktop Anwendung.\n\n` +
+		`Bitte finden Sie unten die relevanten Logs und Informationen:\n\n` +
+		`---\n${logs}\n---\n\n` +
+		`Vielen Dank für Ihre Unterstützung!`
+	)
+	return `mailto:info@anamedi.com?subject=${subject}&body=${body}`
 }
 
 export async function openPath(path: NamedPath) {
