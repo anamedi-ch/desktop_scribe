@@ -95,6 +95,7 @@ pub fn has_accessibility_permissions() -> bool {
 }
 
 #[cfg(not(target_os = "macos"))]
+#[allow(dead_code)]
 /// On non-macOS platforms, accessibility permissions are not required
 pub fn has_accessibility_permissions() -> bool {
     true

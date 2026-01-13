@@ -33,6 +33,7 @@ mod screen_capture_kit;
 use eyre::{eyre, Result};
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, GlobalShortcutExt};
 use tauri_plugin_window_state::StateFlags;
+#[cfg(target_os = "macos")]
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 use utils::LogError;
