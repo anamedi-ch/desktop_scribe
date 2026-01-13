@@ -604,106 +604,97 @@ pub fn get_cargo_features() -> Vec<String> {
 pub fn restore_focus_to_previous_app() -> Result<()> {
     tracing::info!("Restoring focus to previously frontmost app...");
     audio::restore_frontmost_app();
-    // Small delay to ensure the app is activated
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    // Longer delay to ensure the app is fully activated
+    std::thread::sleep(std::time::Duration::from_millis(150));
     Ok(())
 }
 
-/// Simulate Cmd+V (macOS) or Ctrl+V (Windows/Linux) paste using rdev
-/// This uses CGEvent on macOS which is the most reliable method
-/// Delays are kept minimal (like VoiceInk's 50ms approach)
+/// Simulate Cmd+V (macOS) or Ctrl+V (Windows/Linux) paste
+/// On macOS, uses AppleScript which is more reliable than CGEvent for cross-app paste
 #[tauri::command]
 pub fn simulate_paste() -> Result<()> {
     tracing::info!("Simulating paste keystroke...");
     
     #[cfg(target_os = "macos")]
     {
-        use rdev::{simulate, EventType, Key};
+        // Use AppleScript for paste - this is the most reliable method on macOS
+        // VoiceInk also uses this as their primary/fallback method
+        tracing::debug!("Using AppleScript to simulate Cmd+V...");
         
-        // Minimal delay - VoiceInk uses 50ms before paste
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        let script = r#"
+            tell application "System Events"
+                keystroke "v" using command down
+            end tell
+        "#;
         
-        // Simulate Cmd+V on macOS using CGEvent (via rdev)
-        tracing::debug!("Pressing Meta (Cmd) key...");
-        simulate(&EventType::KeyPress(Key::MetaLeft))
-            .map_err(|e| eyre::eyre!("Failed to press Cmd key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        let output = std::process::Command::new("osascript")
+            .args(["-e", script])
+            .output();
         
-        tracing::debug!("Pressing V key...");
-        simulate(&EventType::KeyPress(Key::KeyV))
-            .map_err(|e| eyre::eyre!("Failed to press V key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        
-        tracing::debug!("Releasing V key...");
-        simulate(&EventType::KeyRelease(Key::KeyV))
-            .map_err(|e| eyre::eyre!("Failed to release V key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        
-        tracing::debug!("Releasing Meta (Cmd) key...");
-        simulate(&EventType::KeyRelease(Key::MetaLeft))
-            .map_err(|e| eyre::eyre!("Failed to release Cmd key: {:?}", e))?;
-        
-        // Small delay after paste to ensure completion
-        std::thread::sleep(std::time::Duration::from_millis(30));
-        tracing::info!("✓ Paste simulation completed successfully");
-        return Ok(());
+        match output {
+            Ok(output) => {
+                if output.status.success() {
+                    tracing::info!("✓ AppleScript paste simulation completed successfully");
+                    return Ok(());
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    tracing::warn!("AppleScript paste returned error: {}", stderr);
+                    
+                    // Fall back to rdev if AppleScript fails
+                    tracing::info!("Falling back to rdev for paste simulation...");
+                    return simulate_paste_rdev();
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to execute AppleScript: {:?}", e);
+                // Fall back to rdev
+                return simulate_paste_rdev();
+            }
+        }
     }
     
-    #[cfg(target_os = "windows")]
+    #[cfg(not(target_os = "macos"))]
     {
-        use rdev::{simulate, EventType, Key};
-        
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        
-        // Simulate Ctrl+V on Windows
-        simulate(&EventType::KeyPress(Key::ControlLeft))
-            .map_err(|e| eyre::eyre!("Failed to press Ctrl key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        
-        simulate(&EventType::KeyPress(Key::KeyV))
-            .map_err(|e| eyre::eyre!("Failed to press V key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        
-        simulate(&EventType::KeyRelease(Key::KeyV))
-            .map_err(|e| eyre::eyre!("Failed to release V key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        
-        simulate(&EventType::KeyRelease(Key::ControlLeft))
-            .map_err(|e| eyre::eyre!("Failed to release Ctrl key: {:?}", e))?;
-        
-        std::thread::sleep(std::time::Duration::from_millis(30));
-        tracing::info!("✓ Paste simulation completed successfully");
-        return Ok(());
+        simulate_paste_rdev()
     }
+}
+
+/// Fallback paste simulation using rdev library
+fn simulate_paste_rdev() -> Result<()> {
+    use rdev::{simulate, EventType, Key};
     
-    #[cfg(target_os = "linux")]
-    {
-        use rdev::{simulate, EventType, Key};
-        
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        
-        // Simulate Ctrl+V on Linux
-        simulate(&EventType::KeyPress(Key::ControlLeft))
-            .map_err(|e| eyre::eyre!("Failed to press Ctrl key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        
-        simulate(&EventType::KeyPress(Key::KeyV))
-            .map_err(|e| eyre::eyre!("Failed to press V key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        
-        simulate(&EventType::KeyRelease(Key::KeyV))
-            .map_err(|e| eyre::eyre!("Failed to release V key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        
-        simulate(&EventType::KeyRelease(Key::ControlLeft))
-            .map_err(|e| eyre::eyre!("Failed to release Ctrl key: {:?}", e))?;
-        
-        std::thread::sleep(std::time::Duration::from_millis(30));
-        tracing::info!("✓ Paste simulation completed successfully");
-        return Ok(());
-    }
+    tracing::debug!("Using rdev for paste simulation...");
     
-    #[allow(unreachable_code)]
+    // Small delay before starting
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    
+    #[cfg(target_os = "macos")]
+    let modifier_key = Key::MetaLeft;
+    
+    #[cfg(not(target_os = "macos"))]
+    let modifier_key = Key::ControlLeft;
+    
+    // Press modifier
+    simulate(&EventType::KeyPress(modifier_key))
+        .map_err(|e| eyre::eyre!("Failed to press modifier key: {:?}", e))?;
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    
+    // Press V
+    simulate(&EventType::KeyPress(Key::KeyV))
+        .map_err(|e| eyre::eyre!("Failed to press V key: {:?}", e))?;
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    
+    // Release V
+    simulate(&EventType::KeyRelease(Key::KeyV))
+        .map_err(|e| eyre::eyre!("Failed to release V key: {:?}", e))?;
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    
+    // Release modifier
+    simulate(&EventType::KeyRelease(modifier_key))
+        .map_err(|e| eyre::eyre!("Failed to release modifier key: {:?}", e))?;
+    
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    tracing::info!("✓ rdev paste simulation completed");
     Ok(())
 }
 

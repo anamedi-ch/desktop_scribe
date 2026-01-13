@@ -379,7 +379,7 @@ export function viewModel() {
 	/**
 	 * Copy summary text to clipboard and automatically paste it.
 	 * Uses VoiceInk-style approach: restore focus to the app that was active when recording started,
-	 * then paste with minimal delay (50ms).
+	 * then paste using AppleScript (most reliable on macOS).
 	 */
 	async function copySummaryToClipboard(text: string): Promise<void> {
 		console.log('Auto-paste: Copying summary to clipboard, text length:', text.length)
@@ -393,7 +393,7 @@ export function viewModel() {
 			hotToast.success(
 				'📋 Füge Zusammenfassung ein...',
 				{ 
-					duration: 1000,
+					duration: 1500,
 					style: {
 						background: '#3B82F6',
 						color: 'white',
@@ -413,11 +413,12 @@ export function viewModel() {
 				console.warn('Failed to restore focus, will still try to paste:', focusError)
 			}
 			
-			// Small delay to ensure focus is established (like VoiceInk's 50ms)
-			await new Promise((resolve) => setTimeout(resolve, 50))
+			// Give extra time for the target app to fully receive focus
+			// This is critical - the app needs to be ready to receive keystrokes
+			await new Promise((resolve) => setTimeout(resolve, 200))
 			
-			// Try to paste
-			console.log('Attempting to simulate paste...')
+			// Try to paste using AppleScript (most reliable on macOS)
+			console.log('Attempting to simulate paste via AppleScript...')
 			try {
 				await invoke('simulate_paste')
 				console.log('✓ Paste simulation completed')
