@@ -378,7 +378,8 @@ export function viewModel() {
 
 	/**
 	 * Copy summary text to clipboard and automatically paste it.
-	 * Shows notification to let user focus target window, then pastes.
+	 * Uses VoiceInk-style approach: restore focus to the app that was active when recording started,
+	 * then paste with minimal delay (50ms).
 	 */
 	async function copySummaryToClipboard(text: string): Promise<void> {
 		console.log('Auto-paste: Copying summary to clipboard, text length:', text.length)
@@ -388,24 +389,32 @@ export function viewModel() {
 			await clipboard.writeText(text)
 			console.log('✓ Summary copied to clipboard successfully')
 			
-			// Show notification to give user time to focus target window
+			// Show brief notification
 			hotToast.success(
-				'📋 Zusammenfassung wird in 2 Sekunden eingefügt...',
+				'📋 Füge Zusammenfassung ein...',
 				{ 
-					duration: 2500,
+					duration: 1000,
 					style: {
 						background: '#3B82F6',
 						color: 'white',
 						fontWeight: 'bold',
-						padding: '16px',
-						borderRadius: '10px',
+						padding: '12px',
+						borderRadius: '8px',
 					}
 				}
 			)
 			
-			// Wait for user to click in target window
-			console.log('Waiting 2 seconds for user to focus target window...')
-			await new Promise((resolve) => setTimeout(resolve, 2000))
+			// Restore focus to the app that was frontmost when recording started
+			console.log('Restoring focus to previous app...')
+			try {
+				await invoke('restore_focus_to_previous_app')
+				console.log('✓ Focus restored to previous app')
+			} catch (focusError) {
+				console.warn('Failed to restore focus, will still try to paste:', focusError)
+			}
+			
+			// Small delay to ensure focus is established (like VoiceInk's 50ms)
+			await new Promise((resolve) => setTimeout(resolve, 50))
 			
 			// Try to paste
 			console.log('Attempting to simulate paste...')

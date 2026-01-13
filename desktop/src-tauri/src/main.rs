@@ -69,13 +69,28 @@ fn main() -> Result<()> {
             tracing::info!("Attempting to register global shortcut: modifiers={:?} (bits: {:b}), code={:?}", modifiers, modifiers.bits(), Code::KeyR);
             
             // Use on_shortcut which should register and set up handler in one call
-            // Add debouncing to prevent multiple rapid triggers
-            use std::sync::atomic::{AtomicBool, Ordering};
+            // Add debouncing with 500ms cooldown (like VoiceInk) to prevent multiple rapid triggers
+            use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
             use std::sync::Arc;
+            use std::time::{SystemTime, UNIX_EPOCH};
+            
             let shortcut_debounce = Arc::new(AtomicBool::new(false));
             let shortcut_debounce_clone = shortcut_debounce.clone();
+            let last_shortcut_time = Arc::new(AtomicU64::new(0));
+            let last_shortcut_time_clone = last_shortcut_time.clone();
             
             match app_handle.global_shortcut().on_shortcut(shortcut, move |app, _shortcut, _event| {
+                // Check 500ms cooldown first (like VoiceInk)
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                let last_time = last_shortcut_time_clone.load(Ordering::SeqCst);
+                if now.saturating_sub(last_time) < 500 {
+                    tracing::debug!("Shortcut cooldown active ({}ms since last), ignoring", now.saturating_sub(last_time));
+                    return;
+                }
+                
                 // Debounce: ignore if already processing
                 if shortcut_debounce_clone
                     .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -84,6 +99,9 @@ fn main() -> Result<()> {
                     tracing::debug!("Shortcut already being processed, ignoring duplicate");
                     return;
                 }
+                
+                // Update last shortcut time
+                last_shortcut_time_clone.store(now, Ordering::SeqCst);
                 
                 eprintln!("🔥🔥🔥 Global shortcut pressed! Toggling recording...");
                 tracing::info!("🔥🔥🔥 Global shortcut pressed! Toggling recording...");
@@ -100,7 +118,7 @@ fn main() -> Result<()> {
                             tracing::error!("✗ Failed to toggle recording: {:?}", e);
                         }
                     }
-                    // Reset debounce after a short delay
+                    // Reset debounce after 500ms cooldown
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     debounce.store(false, Ordering::SeqCst);
                 });
@@ -200,6 +218,7 @@ fn main() -> Result<()> {
             cmd::is_crashed_recently,
             cmd::rename_crash_file,
             cmd::simulate_paste,
+            cmd::restore_focus_to_previous_app,
             cmd::register_global_shortcut,
             cmd::unregister_all_shortcuts,
             #[cfg(windows)]

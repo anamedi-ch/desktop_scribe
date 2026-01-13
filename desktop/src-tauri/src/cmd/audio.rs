@@ -23,6 +23,92 @@ static IS_TOGGLING: AtomicBool = AtomicBool::new(false);
 static LAST_DEVICES: Mutex<Option<Vec<AudioDevice>>> = Mutex::new(None);
 static LAST_STORE_IN_DOCUMENTS: Mutex<Option<bool>> = Mutex::new(None);
 
+/// Store the frontmost application bundle ID before recording starts
+/// This allows us to restore focus to it after transcription completes
+#[cfg(target_os = "macos")]
+static FRONTMOST_APP_BUNDLE_ID: Mutex<Option<String>> = Mutex::new(None);
+
+/// Save the current frontmost application (macOS only)
+#[cfg(target_os = "macos")]
+pub fn save_frontmost_app() {
+    use std::process::Command;
+    
+    // Use osascript to get the frontmost application's bundle ID
+    // This is more reliable than using NSWorkspace from Rust
+    let output = Command::new("osascript")
+        .args(["-e", "tell application \"System Events\" to get bundle identifier of first application process whose frontmost is true"])
+        .output();
+    
+    if let Ok(output) = output {
+        if output.status.success() {
+            let bundle_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !bundle_id.is_empty() {
+                tracing::info!("📱 Saved frontmost app bundle ID: {}", bundle_id);
+                if let Ok(mut guard) = FRONTMOST_APP_BUNDLE_ID.lock() {
+                    *guard = Some(bundle_id);
+                }
+            }
+        }
+    }
+}
+
+/// Restore focus to the previously frontmost application (macOS only)
+#[cfg(target_os = "macos")]
+pub fn restore_frontmost_app() {
+    use std::process::Command;
+    
+    let bundle_id = {
+        if let Ok(guard) = FRONTMOST_APP_BUNDLE_ID.lock() {
+            guard.clone()
+        } else {
+            None
+        }
+    };
+    
+    if let Some(bundle_id) = bundle_id {
+        // Skip if it's our own app
+        if bundle_id.contains("anamedi") || bundle_id.contains("vibe") {
+            tracing::debug!("Skipping focus restore - frontmost app was our own app");
+            return;
+        }
+        
+        tracing::info!("📱 Restoring focus to app: {}", bundle_id);
+        
+        // Use osascript to activate the application
+        let script = format!(
+            "tell application id \"{}\" to activate",
+            bundle_id
+        );
+        
+        let result = Command::new("osascript")
+            .args(["-e", &script])
+            .output();
+        
+        match result {
+            Ok(output) => {
+                if output.status.success() {
+                    tracing::info!("✓ Successfully restored focus to {}", bundle_id);
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    tracing::warn!("Failed to restore focus: {}", stderr);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to execute osascript for focus restore: {:?}", e);
+            }
+        }
+    } else {
+        tracing::debug!("No frontmost app saved to restore");
+    }
+}
+
+// No-op implementations for non-macOS platforms
+#[cfg(not(target_os = "macos"))]
+pub fn save_frontmost_app() {}
+
+#[cfg(not(target_os = "macos"))]
+pub fn restore_frontmost_app() {}
+
 fn show_recording_notification(app_handle: &AppHandle) -> Result<()> {
     // Emit event to frontend to show notification
     // Frontend will use Web Notification API which is more reliable than overlay windows
@@ -96,6 +182,10 @@ unsafe impl Sync for StreamHandle {}
 /// Record audio from the given devices, store to wav, merge with ffmpeg, and return path
 /// Record audio from the given devices, store to wav, merge with ffmpeg, and return path
 pub async fn start_record(app_handle: AppHandle, devices: Vec<AudioDevice>, store_in_documents: bool) -> Result<()> {
+    // Save the frontmost app BEFORE we do anything else
+    // This captures which app had focus when the user started recording
+    save_frontmost_app();
+    
     // Check if already recording to prevent double-starts
     let was_recording = IS_RECORDING.swap(true, Ordering::SeqCst);
     if was_recording {

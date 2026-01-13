@@ -598,8 +598,20 @@ pub fn get_cargo_features() -> Vec<String> {
     enabled_features
 }
 
+/// Restore focus to the app that was frontmost when recording started
+/// This should be called before pasting to ensure text goes to the right app
+#[tauri::command]
+pub fn restore_focus_to_previous_app() -> Result<()> {
+    tracing::info!("Restoring focus to previously frontmost app...");
+    audio::restore_frontmost_app();
+    // Small delay to ensure the app is activated
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    Ok(())
+}
+
 /// Simulate Cmd+V (macOS) or Ctrl+V (Windows/Linux) paste using rdev
 /// This uses CGEvent on macOS which is the most reliable method
+/// Delays are kept minimal (like VoiceInk's 50ms approach)
 #[tauri::command]
 pub fn simulate_paste() -> Result<()> {
     tracing::info!("Simulating paste keystroke...");
@@ -608,31 +620,31 @@ pub fn simulate_paste() -> Result<()> {
     {
         use rdev::{simulate, EventType, Key};
         
-        // Small delay to ensure we don't interfere with other key events
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        // Minimal delay - VoiceInk uses 50ms before paste
+        std::thread::sleep(std::time::Duration::from_millis(50));
         
-        // Simulate Cmd+V on macOS
+        // Simulate Cmd+V on macOS using CGEvent (via rdev)
         tracing::debug!("Pressing Meta (Cmd) key...");
         simulate(&EventType::KeyPress(Key::MetaLeft))
             .map_err(|e| eyre::eyre!("Failed to press Cmd key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(10));
         
         tracing::debug!("Pressing V key...");
         simulate(&EventType::KeyPress(Key::KeyV))
             .map_err(|e| eyre::eyre!("Failed to press V key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(10));
         
         tracing::debug!("Releasing V key...");
         simulate(&EventType::KeyRelease(Key::KeyV))
             .map_err(|e| eyre::eyre!("Failed to release V key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(10));
         
         tracing::debug!("Releasing Meta (Cmd) key...");
         simulate(&EventType::KeyRelease(Key::MetaLeft))
             .map_err(|e| eyre::eyre!("Failed to release Cmd key: {:?}", e))?;
         
-        // Wait for paste to complete
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        // Small delay after paste to ensure completion
+        std::thread::sleep(std::time::Duration::from_millis(30));
         tracing::info!("✓ Paste simulation completed successfully");
         return Ok(());
     }
@@ -641,25 +653,25 @@ pub fn simulate_paste() -> Result<()> {
     {
         use rdev::{simulate, EventType, Key};
         
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(50));
         
         // Simulate Ctrl+V on Windows
         simulate(&EventType::KeyPress(Key::ControlLeft))
             .map_err(|e| eyre::eyre!("Failed to press Ctrl key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(10));
         
         simulate(&EventType::KeyPress(Key::KeyV))
             .map_err(|e| eyre::eyre!("Failed to press V key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(10));
         
         simulate(&EventType::KeyRelease(Key::KeyV))
             .map_err(|e| eyre::eyre!("Failed to release V key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(10));
         
         simulate(&EventType::KeyRelease(Key::ControlLeft))
             .map_err(|e| eyre::eyre!("Failed to release Ctrl key: {:?}", e))?;
         
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(30));
         tracing::info!("✓ Paste simulation completed successfully");
         return Ok(());
     }
@@ -668,25 +680,25 @@ pub fn simulate_paste() -> Result<()> {
     {
         use rdev::{simulate, EventType, Key};
         
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(50));
         
         // Simulate Ctrl+V on Linux
         simulate(&EventType::KeyPress(Key::ControlLeft))
             .map_err(|e| eyre::eyre!("Failed to press Ctrl key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(10));
         
         simulate(&EventType::KeyPress(Key::KeyV))
             .map_err(|e| eyre::eyre!("Failed to press V key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(10));
         
         simulate(&EventType::KeyRelease(Key::KeyV))
             .map_err(|e| eyre::eyre!("Failed to release V key: {:?}", e))?;
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(10));
         
         simulate(&EventType::KeyRelease(Key::ControlLeft))
             .map_err(|e| eyre::eyre!("Failed to release Ctrl key: {:?}", e))?;
         
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(30));
         tracing::info!("✓ Paste simulation completed successfully");
         return Ok(());
     }
@@ -696,9 +708,13 @@ pub fn simulate_paste() -> Result<()> {
 }
 
 /// Register a global shortcut dynamically
+/// Uses 500ms cooldown (like VoiceInk) and state validation
 #[tauri::command]
 pub async fn register_global_shortcut(app_handle: tauri::AppHandle, modifiers: String, key: String) -> Result<String> {
     use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::Arc;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     // Parse modifiers
     let mut mod_flags = Modifiers::empty();
@@ -766,23 +782,38 @@ pub async fn register_global_shortcut(app_handle: tauri::AppHandle, modifiers: S
 
     let shortcut = Shortcut::new(Some(mod_flags), key_code);
 
-    // Register new shortcut with debouncing
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
+    // Register new shortcut with 500ms cooldown (like VoiceInk)
     let shortcut_debounce = Arc::new(AtomicBool::new(false));
     let shortcut_debounce_clone = shortcut_debounce.clone();
+    let last_shortcut_time = Arc::new(AtomicU64::new(0));
+    let last_shortcut_time_clone = last_shortcut_time.clone();
 
     // Use on_shortcut which registers and sets handler in one call
     app_handle
         .global_shortcut()
         .on_shortcut(shortcut, move |app, _shortcut, _event| {
+            // Check 500ms cooldown first (like VoiceInk)
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let last_time = last_shortcut_time_clone.load(Ordering::SeqCst);
+            if now.saturating_sub(last_time) < 500 {
+                tracing::debug!("Shortcut cooldown active ({}ms since last), ignoring", now.saturating_sub(last_time));
+                return;
+            }
+            
             if shortcut_debounce_clone
                 .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
                 .is_err()
             {
+                tracing::debug!("Shortcut already being processed, ignoring");
                 return;
             }
 
+            // Update last shortcut time
+            last_shortcut_time_clone.store(now, Ordering::SeqCst);
+            
             let app_handle = app.app_handle().clone();
             let debounce = shortcut_debounce_clone.clone();
 
