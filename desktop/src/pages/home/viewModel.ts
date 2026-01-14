@@ -404,21 +404,15 @@ export function viewModel() {
 				}
 			)
 			
-			// Restore focus to the app that was frontmost when recording started
-			console.log('Restoring focus to previous app...')
-			try {
-				await invoke('restore_focus_to_previous_app')
-				console.log('✓ Focus restored to previous app')
-			} catch (focusError) {
-				console.warn('Failed to restore focus, will still try to paste:', focusError)
-			}
+			// Small delay to ensure clipboard is ready
+			await new Promise((resolve) => setTimeout(resolve, 100))
 			
-			// Give extra time for the target app to fully receive focus
-			// This is critical - the app needs to be ready to receive keystrokes
-			await new Promise((resolve) => setTimeout(resolve, 200))
-			
-			// Try to paste using AppleScript (most reliable on macOS)
-			console.log('Attempting to simulate paste via AppleScript...')
+			// Simulate paste - this now handles:
+			// 1. Activating the target app (saved when recording started)
+			// 2. Waiting for activation
+			// 3. Sending Cmd+V keystroke
+			// All in a single AppleScript call for reliability
+			console.log('Simulating paste (activate target app + Cmd+V)...')
 			try {
 				await invoke('simulate_paste')
 				console.log('✓ Paste simulation completed')

@@ -7146,7 +7146,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vibe"
-version = "0.0.6"
+version = "0.0.9"
 dependencies = [
  "ash",
  "axum",
@@ -7206,7 +7206,7 @@ dependencies = [
 
 [[package]]
 name = "vibe_core"
-version = "0.0.6"
+version = "0.0.9"
 dependencies = [
  "chrono",
  "eyre 1.0.0",

@@ -610,52 +610,94 @@ pub fn restore_focus_to_previous_app() -> Result<()> {
 }
 
 /// Simulate Cmd+V (macOS) or Ctrl+V (Windows/Linux) paste
-/// On macOS, uses AppleScript which is more reliable than CGEvent for cross-app paste
+/// On macOS, uses a combined AppleScript that activates the target app AND pastes in one call
 #[tauri::command]
 pub fn simulate_paste() -> Result<()> {
     tracing::info!("Simulating paste keystroke...");
-    
+
     #[cfg(target_os = "macos")]
     {
-        // Use AppleScript for paste - this is the most reliable method on macOS
-        // VoiceInk also uses this as their primary/fallback method
-        tracing::debug!("Using AppleScript to simulate Cmd+V...");
+        // Get the saved frontmost app bundle ID
+        let bundle_id = audio::get_frontmost_app_bundle_id();
         
-        let script = r#"
-            tell application "System Events"
-                keystroke "v" using command down
-            end tell
-        "#;
-        
-        let output = std::process::Command::new("osascript")
-            .args(["-e", script])
-            .output();
-        
-        match output {
-            Ok(output) => {
-                if output.status.success() {
-                    tracing::info!("✓ AppleScript paste simulation completed successfully");
-                    return Ok(());
-                } else {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    tracing::warn!("AppleScript paste returned error: {}", stderr);
-                    
-                    // Fall back to rdev if AppleScript fails
-                    tracing::info!("Falling back to rdev for paste simulation...");
-                    return simulate_paste_rdev();
+        if let Some(bundle_id) = bundle_id {
+            tracing::info!("📋 Pasting into app: {}", bundle_id);
+            
+            // Combined AppleScript: activate the target app, wait, then paste
+            // This ensures everything happens in the right sequence
+            let script = format!(r#"
+                tell application id "{}"
+                    activate
+                end tell
+                delay 0.15
+                tell application "System Events"
+                    keystroke "v" using command down
+                end tell
+            "#, bundle_id);
+            
+            let output = std::process::Command::new("osascript")
+                .args(["-e", &script])
+                .output();
+            
+            match output {
+                Ok(output) => {
+                    if output.status.success() {
+                        tracing::info!("✓ Combined activate+paste completed successfully");
+                        return Ok(());
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        tracing::warn!("Combined paste script returned error: {}", stderr);
+                        // Try fallback with just System Events
+                        return simulate_paste_system_events();
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to execute combined paste script: {:?}", e);
+                    return simulate_paste_system_events();
                 }
             }
-            Err(e) => {
-                tracing::warn!("Failed to execute AppleScript: {:?}", e);
-                // Fall back to rdev
-                return simulate_paste_rdev();
-            }
+        } else {
+            tracing::warn!("No target app saved, using generic System Events paste");
+            return simulate_paste_system_events();
         }
     }
     
     #[cfg(not(target_os = "macos"))]
     {
         simulate_paste_rdev()
+    }
+}
+
+/// Fallback: paste using System Events without targeting a specific app
+#[cfg(target_os = "macos")]
+fn simulate_paste_system_events() -> Result<()> {
+    tracing::debug!("Using generic System Events paste...");
+    
+    let script = r#"
+        tell application "System Events"
+            keystroke "v" using command down
+        end tell
+    "#;
+    
+    let output = std::process::Command::new("osascript")
+        .args(["-e", script])
+        .output();
+    
+    match output {
+        Ok(output) => {
+            if output.status.success() {
+                tracing::info!("✓ System Events paste completed");
+                Ok(())
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                tracing::warn!("System Events paste failed: {}", stderr);
+                simulate_paste_rdev()
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to execute System Events paste: {:?}", e);
+            simulate_paste_rdev()
+        }
     }
 }
 

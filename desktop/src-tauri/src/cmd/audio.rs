@@ -52,6 +52,16 @@ pub fn save_frontmost_app() {
     }
 }
 
+/// Get the saved frontmost app bundle ID (macOS only)
+#[cfg(target_os = "macos")]
+pub fn get_frontmost_app_bundle_id() -> Option<String> {
+    if let Ok(guard) = FRONTMOST_APP_BUNDLE_ID.lock() {
+        guard.clone()
+    } else {
+        None
+    }
+}
+
 /// Restore focus to the previously frontmost application (macOS only)
 #[cfg(target_os = "macos")]
 pub fn restore_frontmost_app() {
